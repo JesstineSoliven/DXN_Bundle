@@ -1,0 +1,10 @@
+# Price list source (contains DP/PV/SV) — keep local; js/data/catalog.js is generated from it
+*.xlsx
+~$*
+
+# Local dev output
+temporary screenshots/
+node_modules/
+.claude/
+.DS_Store
+Thumbs.db
