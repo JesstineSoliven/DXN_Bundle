@@ -1,6 +1,7 @@
 /**
  * import-pricelist.mjs — turn the DXN price list (.xlsx) into js/data/catalog.js.
- * Usage: node tools/import-pricelist.mjs ["PRICELIST-WITH-NEW-PRODUCTS (1).xlsx"]
+ * Usage: node tools/import-pricelist.mjs ["PRICELIST-WITH-NEW-PRODUCTS (1).xlsx"] [--db]
+ *   --db  also push the new prices/products to the database (DATABASE_URL or .env.local; else local PGlite)
  *
  * Only CP (Consumer Price) is used. DP, PV and SV are distributor prices/points and are ignored.
  * Rows without a CP (e.g. registration kits) are skipped and listed in the console output.
@@ -11,7 +12,8 @@ import { inflateRawSync } from 'zlib';
 import { fileURLToPath } from 'url';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const src = process.argv[2] || 'PRICELIST-WITH-NEW-PRODUCTS (1).xlsx';
+const args = process.argv.slice(2);
+const src = args.find((a) => !a.startsWith('--')) || 'PRICELIST-WITH-NEW-PRODUCTS (1).xlsx';
 const OUT = ROOT + 'js/data/catalog.js';
 
 // ---------- minimal .xlsx (zip) reader ----------
@@ -134,3 +136,8 @@ const byCat = products.reduce((a, p) => ((a[p.category] = (a[p.category] || 0) +
 console.log(`✓ ${products.length} products → js/data/catalog.js`, byCat);
 console.log(`  with photos: ${products.filter((p) => p.image).length}; featured: ${products.filter((p) => p.featured).map((p) => p.code).join(', ')}`);
 if (skipped.length) console.log(`  skipped ${skipped.length}:\n   - ${skipped.join('\n   - ')}`);
+
+if (args.includes('--db')) {
+  console.log('→ updating the database…');
+  await import('../scripts/db-setup.mjs'); // reads the catalog.js just written
+}

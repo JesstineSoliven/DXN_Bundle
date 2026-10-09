@@ -1,14 +1,11 @@
-// Store-wide settings. Change here; Phase 6 moves these into the admin dashboard.
+// Store-wide settings for the browser. Shared values live in js/shared/constants.js so the API uses the same ones.
+// Admin email and SMTP are server-side environment variables (ADMIN_EMAIL, GMAIL_USER, GMAIL_APP_PASSWORD).
+import { DELIVERY_FEE, GCASH_ACCOUNT, getDeliveryFee } from './shared/constants.js';
+
 export const config = {
-  deliveryFee: 0,                        // ₱ — free delivery for now
-  adminEmail: 'jess1008soliven@gmail.com', // receives order + payment emails (sent by the Phase 5 backend)
+  deliveryFee: DELIVERY_FEE,
   currency: 'PHP',
-  gcash: {
-    accountName: 'Jesstine Soliven',
-    number: '09267503411',
-    qrImage: 'assets/img/gcash-qr.webp',
-  },
+  gcash: GCASH_ACCOUNT,
 };
 
-/** Delivery fee for an order. Kept as a function so region/amount rules can be added later. */
-export const getDeliveryFee = (/* subtotal, address */) => config.deliveryFee;
+export { getDeliveryFee };

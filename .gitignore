@@ -8,3 +8,10 @@ node_modules/
 .claude/
 .DS_Store
 Thumbs.db
+
+# Secrets and local database
+.env
+.env.*
+.data/
+.vercel/
+!.env.example

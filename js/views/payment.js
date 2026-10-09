@@ -2,7 +2,7 @@
 // Shows the store's GCash QR/number and collects the customer's reference number.
 import { icon, formatPeso, esc } from '../components.js';
 import { getPaymentMethod } from '../payments/index.js';
-import { getOrder, submitPaymentProof } from '../store/orders.js';
+import { submitPaymentProof, orderLink } from '../store/orders.js';
 
 const fmtNumber = (n) => n.replace(/^(\d{4})(\d{3})(\d{4})$/, '$1 $2 $3');
 
@@ -19,8 +19,7 @@ const field = (id, label, { value = '', placeholder = '', inputmode = '', autoco
     <p id="pay-${id}-err" class="field-error" hidden></p>
   </div>`;
 
-export function renderPayment(params) {
-  const order = getOrder(params.get('id'));
+export function renderPayment(params, order) {
   if (!order || order.payment.method !== 'gcash') {
     return `
     <section class="mx-auto max-w-lg px-4 py-16 text-center">
@@ -28,7 +27,7 @@ export function renderPayment(params) {
         ${icon('receipt', 'w-12 h-12 mx-auto text-ink-mute', 1.4)}
         <h1 class="font-serif text-[22px] mt-4">${order ? 'No GCash payment needed' : 'Order not found'}</h1>
         <p class="text-[14px] text-ink-mute mt-2">${order ? 'This order is paid by Cash on Delivery.' : 'We couldn’t find that order on this device.'}</p>
-        <a href="${order ? `#/order/${esc(order.id)}` : '#/'}" class="btn btn-green h-11 px-6 mt-6 text-[14px]">${order ? 'View order' : 'Back to Home'}</a>
+        <a href="${order ? esc(orderLink(order.id)) : '#/'}" class="btn btn-green h-11 px-6 mt-6 text-[14px]">${order ? 'View order' : 'Back to Home'}</a>
       </div>
     </section>`;
   }
@@ -100,9 +99,9 @@ export function renderPayment(params) {
           </div>
           <p class="field-error" data-proof-error role="alert" hidden></p>
           <button type="submit" class="btn btn-green h-[52px] text-[15.5px]" data-submit-proof><span data-label>Submit Payment</span>${icon('arrowRight', 'w-5 h-5 btn-arrow', 2)}</button>
-          <a href="#/order/${esc(order.id)}" class="text-center text-[13px] text-ink-mute underline underline-offset-2 hover:text-ink active:opacity-60">I’ll pay later — view my order</a>
+          <a href="${esc(orderLink(order.id))}" class="text-center text-[13px] text-ink-mute underline underline-offset-2 hover:text-ink active:opacity-60">I’ll pay later — view my order</a>
         </form>` : `
-        <a href="#/order/${esc(order.id)}" class="btn btn-green h-[52px] text-[15.5px]">View Order Status${icon('arrowRight', 'w-5 h-5 btn-arrow', 2)}</a>`}
+        <a href="${esc(orderLink(order.id))}" class="btn btn-green h-[52px] text-[15.5px]">View Order Status${icon('arrowRight', 'w-5 h-5 btn-arrow', 2)}</a>`}
       </div>
     </div>
   </section>`;
@@ -150,7 +149,7 @@ export function mountPayment(root, params) {
           form[Object.keys(res.errors)[0]]?.focus();
           throw null;
         }
-        location.hash = `#/order/${id}`;
+        location.hash = orderLink(id);
       } catch (err) {
         if (err) { formErr.textContent = err.message; formErr.hidden = false; }
         btn.disabled = false;

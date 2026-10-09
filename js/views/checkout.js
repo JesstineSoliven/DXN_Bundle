@@ -5,6 +5,7 @@ import { getDeliveryFee } from '../config.js';
 import { paymentMethods, defaultPaymentMethod, getPaymentMethod } from '../payments/index.js';
 import { validateReferralCode, normalizeCode } from '../services/referral.js';
 import { createOrder } from '../store/orders.js';
+import { CHECKOUT_RULES as RULES, normalizeMobile } from '../shared/rules.js';
 import * as bundle from '../store/bundle.js';
 import * as mystery from '../store/mystery.js';
 
@@ -14,34 +15,13 @@ const DRAFT_KEY = 'dxn.checkout.draft';
 function orderLines(isMystery) {
   return isMystery ? mystery.lines() : bundle.lines();
 }
-function toOrderItems(lines) {
-  return lines.map(({ product: p, qty, lineTotal }) => ({
-    id: p.id, code: p.code, name: p.name, size: p.size || '', price: p.price, qty, lineTotal,
-  }));
-}
 function totals(lines) {
   const subtotal = lines.reduce((a, l) => a + l.lineTotal, 0);
   const deliveryFee = getDeliveryFee(subtotal);
   return { count: lines.reduce((a, l) => a + l.qty, 0), subtotal, deliveryFee, grandTotal: subtotal + deliveryFee };
 }
 
-// ---------- validation ----------
-export function normalizeMobile(v) {
-  const d = String(v || '').replace(/[\s\-().]/g, '');
-  const m = /^(?:\+?63|0)(9\d{9})$/.exec(d);
-  return m ? `+63 ${m[1].slice(0, 3)} ${m[1].slice(3, 6)} ${m[1].slice(6)}` : null;
-}
-const RULES = {
-  name: (v) => (v.trim().length >= 2 ? '' : 'Enter your full name.'),
-  mobile: (v) => (normalizeMobile(v) ? '' : 'Enter a valid PH mobile number, e.g. 0917 123 4567.'),
-  email: (v) => (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim()) ? '' : 'Enter a valid email address.'),
-  street: (v) => (v.trim().length >= 5 ? '' : 'Enter your house no., street and building.'),
-  barangay: (v) => (v.trim() ? '' : 'Enter your barangay.'),
-  city: (v) => (v.trim() ? '' : 'Enter your city or municipality.'),
-  province: (v) => (v.trim() ? '' : 'Enter your province.'),
-  zip: (v) => (!v.trim() || /^\d{4}$/.test(v.trim()) ? '' : 'ZIP code should be 4 digits.'),
-  notes: () => '',
-};
+// Validation rules are shared with the API: js/shared/rules.js (CHECKOUT_RULES).
 
 // ---------- markup ----------
 const field = (id, label, { type = 'text', autocomplete = '', placeholder = '', optional = false, inputmode = '', value = '', full = false, textarea = false } = {}) => `
@@ -292,28 +272,34 @@ export function mountCheckout(root, params) {
     const v = Object.fromEntries(new FormData(form));
     const lines = orderLines(isMystery);
     try {
-      const order = await createOrder({
+      // Only ids + quantities are sent: the server prices everything from the database.
+      const { order, token } = await createOrder({
         type: isMystery ? 'mystery' : 'custom',
-        items: toOrderItems(lines),
-        totals: totals(lines),
+        items: isMystery ? [] : lines.map(({ product, qty }) => ({ id: product.id, qty })),
+        mysteryQty: isMystery ? lines[0]?.qty : undefined,
         paymentMethod: v.payment,
-        referral: { code: referral.code, referrer: referral.referrer },
+        referralCode: referral.code,
         customer: {
-          name: v.name.trim(),
-          mobile: normalizeMobile(v.mobile),
-          email: v.email.trim().toLowerCase(),
-          address: { street: v.street.trim(), barangay: v.barangay.trim(), city: v.city.trim(), province: v.province.trim(), zip: v.zip.trim() },
-          addressText: [v.street, v.barangay, v.city, v.province, v.zip].map((x) => x.trim()).filter(Boolean).join(', '),
-          notes: v.notes.trim(),
+          name: v.name, mobile: v.mobile, email: v.email,
+          street: v.street, barangay: v.barangay, city: v.city, province: v.province, zip: v.zip, notes: v.notes,
         },
       });
       if (isMystery) mystery.setQty(0); else bundle.clear();
       try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
-      location.hash = getPaymentMethod(order.payment.method).requiresProof ? `#/pay/${order.id}` : `#/order/${order.id}`;
+      const page = getPaymentMethod(order.payment.method).requiresProof ? 'pay' : 'order';
+      location.hash = `#/${page}/${order.id}?t=${encodeURIComponent(token)}`;
     } catch (err) {
       submitting = false;
       placeBtn.disabled = false;
       placeBtn.querySelector('[data-label]').textContent = 'Place Order';
+      // Server-side field errors (same rules as the form) go next to their fields.
+      if (err.fields) {
+        for (const [name, msg] of Object.entries(err.fields)) {
+          if (name === 'referral') { resetReferral(); showError(refInput, msg, refErr); }
+          else if (form[name]) showError(form[name], msg);
+        }
+        (form.querySelector('[aria-invalid="true"]') || refInput).focus();
+      }
       formErr.textContent = err.message || 'Something went wrong. Please try again.';
       formErr.hidden = false;
     }

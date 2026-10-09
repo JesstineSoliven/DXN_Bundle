@@ -1,8 +1,9 @@
-// Catalog data. Products + CP prices come from the official price list via tools/import-pricelist.mjs
-// (→ catalog.js). Phase 5 replaces these exports with API calls; views only import from here.
-import { catalog } from './catalog.js';
+// Catalog data. Products + CP prices come from the database via GET /api/catalog (loadCatalog()).
+// The bundled catalog.js (generated from the price list) is the offline fallback and the DB seed source.
+import { catalog as bundled } from './catalog.js';
+import { FEATURED_PACKAGE_PRICE } from '../shared/constants.js';
 
-export const FEATURED_PACKAGE_PRICE = 7999; // featured/reference package — NOT a checkout minimum
+export { FEATURED_PACKAGE_PRICE };
 
 // `image` = category photo used by the "Shop by Category" cards (mockup categories only).
 export const categories = [
@@ -23,10 +24,35 @@ export const showcaseCategories = categories.filter((c) => c.image);
 // Filter chips shown above product lists (Bundle Packages is a landing category, not a chip).
 export const filterCategories = categories.filter((c) => c.id !== 'bundles');
 
-// Featured products first (mockup order), then price-list order.
-const FEATURED_ORDER = ['FB096', 'HF127', 'FB007', 'HF001', 'FB205', 'PC036'];
-const rank = (p) => (p.featured ? FEATURED_ORDER.indexOf(p.code) : FEATURED_ORDER.length);
-export const products = [...catalog].sort((a, b) => rank(a) - rank(b)); // stable: non-featured keep list order
+// Featured products (mockup order). Used for the bundled fallback and to seed featured_rank in the DB.
+export const FEATURED_ORDER = ['FB096', 'HF127', 'FB007', 'HF001', 'FB205', 'PC036'];
+
+function sortProducts(list) {
+  const rank = (p) => (p.featured ? (p.featuredRank ?? FEATURED_ORDER.indexOf(p.code)) : Infinity);
+  return list.map((p, i) => [p, i]).sort((a, b) => (rank(a[0]) - rank(b[0])) || (a[1] - b[1])).map(([p]) => p);
+}
+
+/** Live binding: importers always see the latest catalog. */
+export let products = sortProducts(bundled);
+export let catalogSource = 'bundled';
+
+/** Fetch the live catalog. Falls back to the bundled list (e.g. static preview without the API). */
+export async function loadCatalog({ timeoutMs = 5000 } = {}) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch('/api/catalog', { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data.products) || !data.products.length) throw new Error('empty catalog');
+    products = sortProducts(data.products);
+    catalogSource = 'api';
+  } catch (err) {
+    console.warn('[catalog] using bundled price list:', err.message);
+  }
+  return products;
+}
 
 export const mysteryBox = {
   id: 'mystery-box',
@@ -46,5 +72,5 @@ export const testimonials = [
 ];
 
 export const formatPeso = (n) => '₱' + n.toLocaleString('en-PH');
-export const getProduct = (id) => catalog.find((p) => p.id === id);
+export const getProduct = (id) => products.find((p) => p.id === id);
 export const categoryName = (id) => categories.find((c) => c.id === id)?.name || '';

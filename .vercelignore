@@ -8,3 +8,8 @@ CLAUDE.md
 README.md
 serve.mjs
 screenshot.mjs
+tests/
+scripts/
+sql/
+.data/
+dev-server.mjs

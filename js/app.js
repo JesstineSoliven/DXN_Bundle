@@ -1,8 +1,9 @@
 // App shell: hash router, nav state, mobile menu, bundle actions and cart badge.
-// Views are { render(params) → HTML, mount?(root, params) → cleanup }.
+// Views are { load?(params) → Promise<data>, render(params, data) → HTML, mount?(root, params) → cleanup }.
 import { icon } from './icons.js';
 import { footer, toast, esc } from './components.js';
-import { getProduct } from './data/products.js';
+import { getProduct, loadCatalog } from './data/products.js';
+import { getOrder, getAdminKey } from './store/orders.js';
 import * as bundle from './store/bundle.js';
 import { renderHome } from './views/home.js';
 import { renderProducts, mountProducts } from './views/products.js';
@@ -23,14 +24,41 @@ const renderAccount = () => `
     </div>
   </section>`;
 
+/** Orders live on the server; a 404 renders the view's "not found" state, other errors a retry card. */
+async function loadOrder(params) {
+  try {
+    const admin = params.get('demo') === '1' ? getAdminKey() : '';
+    return await getOrder(params.get('id'), params.get('t'), { adminKey: admin });
+  } catch (err) {
+    if (err.status === 404 || err.status === 401) return null;
+    throw err;
+  }
+}
+
+const loadingView = () => `
+  <section class="mx-auto max-w-md px-4 py-20 text-center text-ink-mute" aria-busy="true">
+    <span class="spinner inline-block w-8 h-8 text-brand" aria-hidden="true"></span>
+    <p class="mt-4 text-[14px]">Loading…</p>
+  </section>`;
+
+const errorView = (message) => `
+  <section class="mx-auto max-w-md px-4 py-16 text-center">
+    <div class="card p-8">
+      ${icon('shield', 'w-12 h-12 mx-auto text-ink-mute', 1.4)}
+      <h1 class="font-serif text-[22px] mt-4">Something went wrong</h1>
+      <p class="text-[14px] text-ink-mute mt-2">${esc(message)}</p>
+      <button type="button" class="btn btn-green h-11 px-6 mt-6 text-[14px]" onclick="window.dispatchEvent(new HashChangeEvent('hashchange'))">Try again</button>
+    </div>
+  </section>`;
+
 const routes = {
   home: { render: renderHome, nav: 'home' },
   products: { render: renderProducts, mount: mountProducts, nav: 'products' },
   customize: { render: renderCustomize, mount: mountCustomize, nav: 'customize' },
   review: { render: renderReview, mount: mountReview, nav: 'customize' },
   checkout: { render: renderCheckout, mount: mountCheckout, nav: 'customize' },
-  order: { render: renderConfirmation, mount: mountConfirmation, nav: null },
-  pay: { render: renderPayment, mount: mountPayment, nav: null },
+  order: { load: loadOrder, render: renderConfirmation, mount: mountConfirmation, nav: null },
+  pay: { load: loadOrder, render: renderPayment, mount: mountPayment, nav: null },
   'mystery-box': { render: renderMysteryBox, mount: mountMysteryBox, nav: 'mystery-box' },
   account: { render: renderAccount, nav: 'account' },
 };
@@ -56,7 +84,9 @@ function setActive(name) {
   });
 }
 
-function render() {
+let renderSeq = 0;
+
+async function render() {
   // In-page anchors (#about, #contact) scroll without re-routing.
   if (location.hash && !location.hash.startsWith('#/')) {
     document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
@@ -64,10 +94,20 @@ function render() {
   }
   const { name, params } = parseHash();
   const route = routes[name] || routes.home;
+  const seq = ++renderSeq;
   cleanup?.(); cleanup = null;
-  app.innerHTML = `<div class="view-enter">${route.render(params)}</div>`;
-  cleanup = route.mount?.(app, params) || null;
   setActive(route.nav);
+  let data;
+  if (route.load) {
+    app.innerHTML = loadingView();
+    try { data = await route.load(params); } catch (err) {
+      if (seq === renderSeq) app.innerHTML = errorView(err.message);
+      return;
+    }
+    if (seq !== renderSeq) return; // user navigated away while loading
+  }
+  app.innerHTML = `<div class="view-enter">${route.render(params, data)}</div>`;
+  cleanup = route.mount?.(app, params, data) || null;
   if (currentRoute !== name) window.scrollTo({ top: 0, behavior: 'instant' });
   currentRoute = name;
   closeMenu();
@@ -139,4 +179,5 @@ document.querySelectorAll('[data-icon]').forEach((el) => {
 
 document.getElementById('site-footer').innerHTML = footer();
 window.addEventListener('hashchange', render);
-render();
+app.innerHTML = loadingView();
+loadCatalog({ timeoutMs: 4000 }).finally(render); // live prices from the database (bundled list as fallback)

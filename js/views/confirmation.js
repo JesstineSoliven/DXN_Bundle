@@ -1,6 +1,6 @@
 // Order confirmation: #/order/DXN-YYMMDD-NNNN
 import { icon, formatPeso, esc } from '../components.js';
-import { getOrder, setPaymentStatus } from '../store/orders.js';
+import { setPaymentStatus, orderLink, getAdminKey, saveAdminKey } from '../store/orders.js';
 
 const TONE = {
   cod_pending: 'bg-gold-soft text-gold-deep',
@@ -31,6 +31,9 @@ const demoPanel = (order) => `
     <p class="text-[12px] font-bold uppercase tracking-wider text-ink-mute">Demo · admin verification (Phase 6 moves this to the dashboard)</p>
     ${order.payment.status === 'submitted' ? `
       <p class="text-[13.5px] mt-2">Check reference <strong>${esc(order.payment.proof.reference)}</strong> in the GCash app, then:</p>
+      <label class="block text-[12.5px] font-semibold mt-3" for="demo-admin-key">Admin key</label>
+      <input id="demo-admin-key" type="password" autocomplete="off" class="field-input h-10 mt-1 max-w-[340px]" data-admin-key value="${esc(getAdminKey())}">
+      <p class="field-error" data-demo-error role="alert" hidden></p>
       <div class="flex flex-wrap gap-2 mt-3">
         <button type="button" class="btn btn-green h-10 px-4 text-[13.5px]" data-demo-status="confirmed">Mark Payment Confirmed</button>
         <button type="button" class="btn h-10 px-4 text-[13.5px] bg-[#B3261E] text-white hover:opacity-90" data-demo-status="failed">Mark Payment Failed</button>
@@ -39,8 +42,7 @@ const demoPanel = (order) => `
 
 const statusChip = (label, tone) => `<span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-bold ${tone}">${label}</span>`;
 
-export function renderConfirmation(params) {
-  const order = getOrder(params.get('id'));
+export function renderConfirmation(params, order) {
   if (!order) {
     return `
     <section class="mx-auto max-w-lg px-4 py-16 text-center">
@@ -48,6 +50,14 @@ export function renderConfirmation(params) {
         ${icon('receipt', 'w-12 h-12 mx-auto text-ink-mute', 1.4)}
         <h1 class="font-serif text-[22px] mt-4">Order not found</h1>
         <p class="text-[14px] text-ink-mute mt-2">We couldn’t find order <strong>${esc(params.get('id') || '')}</strong> on this device.</p>
+        ${params.get('demo') === '1' ? `
+        <form class="mt-6 text-left" data-admin-unlock>
+          <label for="unlock-key" class="block text-[13px] font-semibold mb-1.5">Admin? Enter your admin key to open this order</label>
+          <div class="flex gap-2">
+            <input id="unlock-key" type="password" autocomplete="off" class="field-input h-11 flex-1" required>
+            <button type="submit" class="btn btn-green h-11 px-5 text-[14px]">Open</button>
+          </div>
+        </form>` : ''}
         <a href="#/" class="btn btn-green h-11 px-6 mt-6 text-[14px]">Back to Home</a>
       </div>
     </section>`;
@@ -94,7 +104,7 @@ export function renderConfirmation(params) {
         <p class="font-bold text-[15px] ${ps === 'failed' ? 'text-[#8C1D18]' : 'text-[#6B4423]'}">${ps === 'failed' ? 'We couldn’t verify your GCash payment' : `Complete your GCash payment of ${formatPeso(t.grandTotal)}`}</p>
         <p class="text-[13.5px] text-ink-soft mt-1">${ps === 'failed' ? 'Please check your reference number and submit it again.' : 'Scan our QR or send to our GCash number, then enter your reference no.'}</p>
       </div>
-      <a href="#/pay/${esc(order.id)}" class="btn btn-green h-12 px-6 text-[14.5px] shrink-0">${ps === 'failed' ? 'Resubmit Payment' : 'Pay with GCash'}${icon('arrowRight', 'w-5 h-5 btn-arrow', 2)}</a>
+      <a href="${esc(orderLink(order.id, 'pay'))}" class="btn btn-green h-12 px-6 text-[14.5px] shrink-0">${ps === 'failed' ? 'Resubmit Payment' : 'Pay with GCash'}${icon('arrowRight', 'w-5 h-5 btn-arrow', 2)}</a>
     </div>` : ps === 'submitted' ? `
     <div class="mt-4 rounded-[16px] bg-[#E8F0FB] p-5 sm:p-6 flex items-start gap-4">
       ${icon('receipt', 'w-9 h-9 text-[#1D4E89] shrink-0', 1.4)}
@@ -174,12 +184,25 @@ export function renderConfirmation(params) {
 }
 
 export function mountConfirmation(root, params) {
+  const unlock = root.querySelector('[data-admin-unlock]');
+  if (unlock) {
+    unlock.addEventListener('submit', (e) => {
+      e.preventDefault();
+      saveAdminKey(unlock.querySelector('input').value.trim());
+      window.dispatchEvent(new HashChangeEvent('hashchange')); // reload the order as admin
+    });
+  }
   const onDemo = (e) => {
     const b = e.target.closest('[data-demo-status]');
     if (!b) return;
     const status = b.dataset.demoStatus;
-    setPaymentStatus(params.get('id'), status, status === 'failed' ? 'Reference number not found in GCash.' : 'Verified in GCash app.');
-    window.dispatchEvent(new HashChangeEvent('hashchange')); // re-render with the new status
+    const key = root.querySelector('[data-admin-key]').value.trim();
+    const errEl = root.querySelector('[data-demo-error]');
+    saveAdminKey(key);
+    b.disabled = true;
+    setPaymentStatus(params.get('id'), status, status === 'failed' ? 'Reference number not found in GCash.' : 'Verified in GCash app.', key)
+      .then(() => window.dispatchEvent(new HashChangeEvent('hashchange'))) // reload with the new status
+      .catch((err) => { errEl.textContent = err.message; errEl.hidden = false; b.disabled = false; });
   };
   root.addEventListener('click', onDemo);
   const btn = root.querySelector('[data-copy]');
