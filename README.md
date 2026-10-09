@@ -66,10 +66,20 @@ Setup:
 - Run `node scripts/paymongo-webhook.mjs` once per mode (test, then live) and add the printed `PAYMONGO_WEBHOOK_SECRET`.
 - Locally, `PAYMONGO_MOCK=1 npm run dev` uses a fake checkout page instead of PayMongo.
 
-## Admin (until the Phase 6 dashboard)
+## Admin dashboard
 
-- Order and GCash emails go to `ADMIN_EMAIL`.
-- GCash payments confirm themselves. For exceptions (refunds, disputes), open the **Manage this order** link in the email and enter your `ADMIN_API_KEY` to mark a payment Failed or Confirmed.
+Open **`/admin`** (e.g. https://dxn-bundle.vercel.app/admin) and sign in with your `ADMIN_API_KEY`.
+
+| Page | What you can do |
+|---|---|
+| Dashboard | Paid revenue, orders today, 7 days and 30/90 days, awaiting payment, to fulfil, daily revenue chart, top products, top referrers |
+| Orders | Search and filter. Move orders Placed → Processing → Shipped → Delivered (or Cancel). Mark COD cash collected, and override GCash payments for refunds |
+| Products | Add, edit and archive products. Inline price edits, category, image URL, featured position (1–6) |
+| Categories | Add, rename, reorder, and delete empty categories |
+| Referral codes | Add codes, rename referrers, turn codes on or off, see orders and sales per code |
+| Customers | Search. Orders count, total paid, last order |
+
+Customers are emailed when an order is **Shipped** (including your note, e.g. the courier and tracking number) or **Cancelled**. Price and product changes appear in the store within about a minute.
 
 ## Tests
 
@@ -79,14 +89,16 @@ DATABASE_URL= GMAIL_USER= GMAIL_APP_PASSWORD= PAYMONGO_MOCK=1 ADMIN_API_KEY=<key
 
 DATABASE_URL= ADMIN_API_KEY=<key> npm run test:api                # pricing, tokens, PayMongo webhook, admin
 DATABASE_URL= ADMIN_API_KEY=<key> node tests/e2e.mjs [--mobile]    # browser flows incl. GCash checkout
+DATABASE_URL= ADMIN_API_KEY=<key> node scripts/admin-test.mjs     # admin API
+ADMIN_API_KEY=<key> node tests/admin-e2e.mjs [--mobile]             # admin dashboard UI
 ```
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `api/` | Serverless endpoints: catalog, referral check, orders, GCash proof, admin payment status |
-| `lib/` | Server code: database, order logic, email |
+| `api/` | Serverless endpoints: catalog, referral check, orders, PayMongo webhook, admin (`api/admin.js`, all admin routes) |
+| `lib/` | Server code: database, order logic, PayMongo, email, admin queries (`lib/admin/`) |
 | `js/shared/` | Rules and constants used by both the browser and the API |
 | `sql/schema.sql` | Database schema |
 | `scripts/` | Database setup and API tests |

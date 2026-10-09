@@ -24,6 +24,14 @@ export const showcaseCategories = categories.filter((c) => c.image);
 // Filter chips shown above product lists (Bundle Packages is a landing category, not a chip).
 export const filterCategories = categories.filter((c) => c.id !== 'bundles');
 
+/** Replace category lists in place with the database's (admin-managed names/order), so existing imports stay valid. */
+function setCategories(list) {
+  const clean = list.map((c) => ({ id: c.id, name: c.name, ...(c.image ? { image: c.image } : {}) }));
+  categories.splice(0, categories.length, ...clean);
+  showcaseCategories.splice(0, showcaseCategories.length, ...clean.filter((c) => c.image));
+  filterCategories.splice(0, filterCategories.length, ...clean.filter((c) => c.id !== 'bundles'));
+}
+
 // Featured products (mockup order). Used for the bundled fallback and to seed featured_rank in the DB.
 export const FEATURED_ORDER = ['FB096', 'HF127', 'FB007', 'HF001', 'FB205', 'PC036'];
 
@@ -47,6 +55,7 @@ export async function loadCatalog({ timeoutMs = 5000 } = {}) {
     const data = await res.json();
     if (!Array.isArray(data.products) || !data.products.length) throw new Error('empty catalog');
     products = sortProducts(data.products);
+    if (Array.isArray(data.categories) && data.categories.length) setCategories(data.categories);
     catalogSource = 'api';
   } catch (err) {
     console.warn('[catalog] using bundled price list:', err.message);

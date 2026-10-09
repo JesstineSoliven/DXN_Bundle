@@ -102,7 +102,7 @@ const toMock = async () => { const t = Date.now(); while (Date.now() - t < 8000)
 ok(await toMock(), 'redirected to the (mock) PayMongo GCash checkout');
 ok((await txt('#amount')) === peso(sub + fee), 'checkout shows the exact amount');
 const id2 = await p.evaluate(() => document.querySelector('p:nth-of-type(2)')?.textContent.trim());
-await Promise.all([p.waitForNavigation({ waitUntil: 'networkidle0' }), p.click('#pay')]);
+await Promise.all([p.waitForNavigation({ waitUntil: 'domcontentloaded' }), p.click('#pay')]);
 ok(await waitHash(/^#\/order\/DXN-.*paid=1/), 'returned to the order page after paying');
 ok(await waitText('[data-pay-status]', 'Payment Confirmed') && (await txt('#app')).includes('Payment confirmed'), 'Payment Confirmed automatically (webhook)');
 ok((await txt('#app')).includes('GCash convenience fee'), 'fee line on the order page');
@@ -117,12 +117,12 @@ await fillCheckout({ name: 'Maria Santos', email: 'maria@example.com', referral:
 await click('input[name=payment][value=gcash]');
 await click('[data-place-order]');
 ok(await toMock(), 'redirected to checkout');
-await Promise.all([p.waitForNavigation({ waitUntil: 'networkidle0' }), p.click('#cancel')]);
+await Promise.all([p.waitForNavigation({ waitUntil: 'domcontentloaded' }), p.click('#cancel')]);
 ok(await waitHash(/^#\/pay\/DXN-.*cancelled=1/) && await waitText('#app', 'Payment cancelled'), 'cancel → back on site: "Payment cancelled", order kept');
 ok(!p.url().includes('/dev/paymongo-checkout'), 'no automatic redirect after cancelling');
-await Promise.all([p.waitForNavigation({ waitUntil: 'networkidle0' }), p.click('[data-start-pay]')]);
+await Promise.all([p.waitForNavigation({ waitUntil: 'domcontentloaded' }), p.click('[data-start-pay]')]);
 ok(p.url().includes('/dev/paymongo-checkout'), 'Try Again → GCash checkout');
-await Promise.all([p.waitForNavigation({ waitUntil: 'networkidle0' }), p.click('#pay-nowebhook')]);
+await Promise.all([p.waitForNavigation({ waitUntil: 'domcontentloaded' }), p.click('#pay-nowebhook')]);
 ok(await waitText('[data-pay-status]', 'Payment Confirmed', 12000), 'webhook delayed → page re-checks with PayMongo → Payment Confirmed');
 const id3 = (await hash()).split('/')[2].split('?')[0];
 

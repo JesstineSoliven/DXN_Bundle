@@ -15,6 +15,28 @@ const MIME = {
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
 };
 
+// vercel.json rewrites (":name*" → rest of path) and cleanUrls, so local behaves like Vercel.
+const vercelConfig = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
+const rewrites = (vercelConfig.rewrites || []).map(({ source, destination }) => {
+  const names = [];
+  const pattern = source
+    .replace(/:(\w+)\*/g, (_, n) => { names.push(n); return '(.*)'; })
+    .replace(/:(\w+)/g, (_, n) => { names.push(n); return '([^/]+)'; });
+  return { re: new RegExp(`^${pattern}$`), names, destination };
+});
+function applyRewrites(url) {
+  for (const r of rewrites) {
+    const m = r.re.exec(url.pathname);
+    if (!m) continue;
+    let dest = r.destination;
+    r.names.forEach((n, i) => { dest = dest.split(`:${n}*`).join(m[i + 1]).split(`:${n}`).join(m[i + 1]); });
+    const next = new URL(dest, url.origin);
+    url.searchParams.forEach((v, k) => next.searchParams.append(k, v));
+    return next;
+  }
+  return url;
+}
+
 /** Resolve /api/... to a function file, preferring exact names over [param] names (like Vercel). */
 function resolveApi(segments) {
   let dir = path.join(ROOT, 'api');
@@ -71,7 +93,8 @@ async function mockCheckout(url, res) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const url = applyRewrites(new URL(req.url, `http://localhost:${PORT}`));
+  req.url = url.pathname + url.search; // handlers see the rewritten URL, like on Vercel
   if (url.pathname.startsWith('/dev/paymongo-') && process.env.PAYMONGO_MOCK === '1') return mockCheckout(url, res);
   if (url.pathname.startsWith('/api/')) {
     const file = resolveApi(url.pathname.split('/').filter(Boolean).slice(1));
@@ -87,6 +110,7 @@ const server = http.createServer(async (req, res) => {
   }
   let p = decodeURIComponent(url.pathname);
   if (p === '/') p = '/index.html';
+  if (vercelConfig.cleanUrls && !path.extname(p) && fs.existsSync(path.join(ROOT, p + '.html'))) p += '.html';
   const filePath = path.join(ROOT, p);
   if (!filePath.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
   fs.stat(filePath, (err, stat) => {

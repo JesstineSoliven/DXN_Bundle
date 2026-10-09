@@ -88,7 +88,7 @@ export function renderConfirmation(params, order) {
         <p class="text-[12.5px] text-ink-mute">Placed ${placed}</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        ${statusChip(`${icon('check', 'w-3.5 h-3.5', 3)}Order placed`, 'bg-brand-soft text-brand')}
+        ${statusChip(`${icon(order.status === 'cancelled' ? 'plus' : 'check', `w-3.5 h-3.5 ${order.status === 'cancelled' ? 'rotate-45' : ''}`, 3)}${esc(order.statusLabel || 'Order placed')}`, order.status === 'cancelled' ? 'bg-[#FCEDEB] text-[#8C1D18]' : 'bg-brand-soft text-brand')}
         <span data-pay-status>${statusChip(`${icon(isCod ? 'truck' : 'wallet', 'w-3.5 h-3.5', 2)}${esc(order.payment.statusLabel)}`, TONE[ps])}</span>
       </div>
     </div>

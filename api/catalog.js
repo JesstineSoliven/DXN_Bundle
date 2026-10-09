@@ -10,5 +10,5 @@ export default handler(['GET'], async (req, res) => {
     id: p.id, code: p.code, name: p.name, size: p.size, category: p.category_id, price: p.price,
     image: p.image, ...(p.featured_rank != null ? { featured: true, featuredRank: p.featured_rank } : {}),
   }));
-  send(res, 200, { categories, products }, { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' });
+  send(res, 200, { categories, products }, { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' });
 });

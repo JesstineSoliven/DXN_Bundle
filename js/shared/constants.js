@@ -36,3 +36,21 @@ export const getPaymentFee = (method, subtotal) => (method === 'gcash' ? Math.ce
 /** Delivery fee for an order. A function so region/amount rules can be added later. */
 export const getDeliveryFee = (/* subtotal, address */) => DELIVERY_FEE;
 
+
+/** Order fulfilment status (separate from payment status). */
+export const ORDER_STATUS = {
+  placed: 'Order placed',
+  processing: 'Processing',
+  shipped: 'Shipped',
+  delivered: 'Delivered',
+  cancelled: 'Cancelled',
+};
+
+/** Allowed admin transitions between fulfilment statuses. */
+export const ORDER_TRANSITIONS = {
+  placed: ['processing', 'shipped', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['delivered', 'cancelled'],
+  delivered: [],
+  cancelled: [],
+};

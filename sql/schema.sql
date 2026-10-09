@@ -112,3 +112,16 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_fee integer NOT NULL DEFAULT
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paymongo_checkout_id text UNIQUE;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paymongo_payment_id text UNIQUE;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+
+-- Phase 6: order fulfilment status history (placed → processing → shipped → delivered | cancelled)
+CREATE TABLE IF NOT EXISTS order_events (
+  id          serial PRIMARY KEY,
+  order_id    text NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  status      text NOT NULL,
+  note        text NOT NULL DEFAULT '',
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_events_order_idx ON order_events(order_id, id);
+CREATE INDEX IF NOT EXISTS orders_status_idx ON orders(status);
+CREATE INDEX IF NOT EXISTS orders_referral_idx ON orders(referral_code);
+CREATE INDEX IF NOT EXISTS orders_customer_idx ON orders(customer_id);

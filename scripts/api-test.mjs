@@ -22,7 +22,7 @@ console.log(`API test → ${BASE}`);
 
 console.log('Catalog');
 const cat = await call('GET', '/api/catalog');
-ok(cat.status === 200 && cat.data.products.length === 154 && cat.data.categories.length === 9, `154 products, 9 categories (got ${cat.data.products?.length})`);
+ok(cat.status === 200 && cat.data.products.length >= 154 && cat.data.categories.length >= 9, `catalog: ${cat.data.products?.length} products, ${cat.data.categories?.length} categories`);
 const fb096 = cat.data.products.find((p) => p.id === 'fb096');
 const hf001 = cat.data.products.find((p) => p.id === 'hf001');
 ok(fb096?.price === 430 && fb096.featured, 'Lingzhi 3 in 1 = ₱430, featured');
@@ -124,7 +124,7 @@ if (ADMIN) {
   const back = await call('POST', path2, { status: 'confirmed', note: 'Resolved.' }, h);
   ok(back.data.order?.payment.status === 'confirmed', 'failed → confirmed');
   ok(back.data.order.payment.history.map((e) => e.status).join('>') === 'pending>confirmed>failed>confirmed', 'full status history');
-  ok((await call('POST', `/api/admin/orders/${o1.id}/payment-status`, { status: 'confirmed' }, h)).status === 409, 'COD order not changeable here → 409');
+  ok((await call('POST', `/api/admin/orders/${o1.id}/payment-status`, { status: 'failed' }, h)).status === 409, 'COD order cannot be marked failed → 409');
   ok((await call('GET', `/api/orders/${o1.id}`, null, h)).data.order?.id === o1.id, 'admin key opens any order (no token)');
 } else console.log('  (set ADMIN_API_KEY to test admin overrides)');
 ok((await call('GET', `/api/orders/${o1.id}`, null, { 'x-admin-key': 'wrong-key-wrong-key' })).status === 401 || !ADMIN, 'wrong admin key on GET → 401');
