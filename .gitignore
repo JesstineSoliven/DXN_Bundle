@@ -22,3 +22,6 @@ Thumbs.db
 # Local AI tooling (installed by the Vercel/Neon CLI)
 .agents/
 skills-lock.json
+
+# Local mock photo uploads (BLOB_MOCK=1)
+assets/img/uploads/

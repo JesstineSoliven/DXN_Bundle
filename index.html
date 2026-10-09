@@ -9,36 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Kaushan+Script&family=Libre+Baskerville:wght@700&family=Montserrat:wght@700;800;900&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700;6..12,800&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              DEFAULT: '#1A552E', // primary buttons, chips, active states
-              deep: '#164E2A',    // hover / pressed
-              band: '#1F4028',    // footer band
-              soft: '#EBF2E6',    // "Create your own bundle" card
-              mist: '#E2EBD9',    // featured card footer strip
-            },
-            gold: { DEFAULT: '#A3713F', deep: '#8C5F33', soft: '#F9EEDC', cream: '#E8DACB' },
-            sand: '#F2EDE4',      // category cards
-            paper: '#FCFBF9',     // page background
-            ink: { DEFAULT: '#131918', soft: '#4A544E', mute: '#6B746E' },
-            line: '#E6E3DC',
-          },
-          fontFamily: {
-            script: ['"Kaushan Script"', 'cursive'],
-            serif: ['"Libre Baskerville"', 'Georgia', 'serif'],
-            price: ['Montserrat', '"Nunito Sans"', 'system-ui', 'sans-serif'],
-            sans: ['"Nunito Sans"', 'system-ui', 'Segoe UI', 'sans-serif'],
-          },
-        },
-      },
-    };
-  </script>
   <link rel="stylesheet" href="css/styles.css">
+  <!-- Tailwind last: utilities override component styles (same cascade as the old CDN build) -->
+  <link rel="stylesheet" href="css/tailwind.css">
 </head>
 <body class="bg-paper text-ink font-sans antialiased pb-[calc(64px+env(safe-area-inset-bottom,0px))] lg:pb-0">
   <a href="#app" class="skip-link">Skip to content</a>

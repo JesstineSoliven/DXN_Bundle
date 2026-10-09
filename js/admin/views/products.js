@@ -1,7 +1,7 @@
 // Products: list (search, category, archived), inline price edit, add/edit dialog, archive/restore.
 // Changes reach the storefront within ~1 minute (catalog cache).
 import { admin } from '../api.js';
-import { icon, esc, peso, activeChip, pageHead, empty, toast, debounce, fieldErrors } from '../ui.js';
+import { icon, esc, peso, activeChip, pageHead, empty, toast, debounce, fieldErrors, compressImage, blobToBase64 } from '../ui.js';
 
 let state = { q: '', cat: '', archived: false };
 
@@ -47,8 +47,15 @@ const dialog = (cats, p = null) => `
           <input name="size" class="adm-input" value="${esc(p?.size || '')}" placeholder="20 sachets x 21g" maxlength="80"></label>
         <label class="flex flex-col gap-1 font-semibold">Price (CP, ₱)
           <input name="price" class="adm-input" inputmode="numeric" value="${p?.price ?? ''}" required></label>
-        <label class="flex flex-col gap-1 font-semibold sm:col-span-2">Image URL <span class="font-normal text-ink-mute">(https://… or assets/img/…; leave blank for a placeholder)</span>
-          <input name="image" class="adm-input" value="${esc(p?.image || '')}" maxlength="500"></label>
+        <div class="sm:col-span-2 flex flex-col gap-1 font-semibold">Photo
+          <div class="flex items-center gap-3">
+            <img data-preview src="${esc(p?.image || '')}" alt="" class="w-16 h-16 rounded-lg object-contain bg-white border border-line shrink-0" ${p?.image ? '' : 'hidden'}>
+            <label class="btn btn-ghost btn-sm cursor-pointer">${icon('plus', 'w-4 h-4', 2.4)}Upload photo
+              <input type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" data-file></label>
+            <button type="button" class="text-[12.5px] font-normal text-ink-mute underline hover:text-ink" data-clear-image ${p?.image ? '' : 'hidden'}>Remove</button>
+            <span class="text-[12px] font-normal text-ink-mute" data-upload-status role="status"></span>
+          </div>
+          <input name="image" class="adm-input mt-1" value="${esc(p?.image || '')}" maxlength="500" placeholder="…or paste an image link (https://…)"></div>
         <label class="flex flex-col gap-1 font-semibold">Featured position <span class="font-normal text-ink-mute">(1–6 on the home page; blank = not featured)</span>
           <input name="featuredRank" class="adm-input" inputmode="numeric" value="${p?.featuredRank != null ? p.featuredRank + 1 : ''}"></label>
       </div>
@@ -136,6 +143,24 @@ export default {
       const dlg = host.querySelector('[data-dialog]'), form = host.querySelector('[data-product-form]'), err = host.querySelector('[data-form-error]');
       dlg.showModal();
       host.querySelector('[data-close]').addEventListener('click', () => dlg.close());
+      const preview = host.querySelector('[data-preview]'), status = host.querySelector('[data-upload-status]'), clear = host.querySelector('[data-clear-image]');
+      const showImage = (url) => { form.image.value = url; preview.src = url; preview.hidden = !url; clear.hidden = !url; };
+      host.querySelector('[data-file]').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast('Choose a JPEG, PNG or WebP photo.', 'error'); return; }
+        const save = host.querySelector('[data-save]');
+        save.disabled = true; status.textContent = 'Compressing…';
+        try {
+          const blob = await compressImage(file);
+          status.textContent = `Uploading ${Math.round(blob.size / 1024)} KB…`;
+          const { url } = await admin.post('upload', { filename: file.name, contentType: blob.type, data: await blobToBase64(blob) });
+          showImage(url); status.textContent = 'Uploaded ✓';
+        } catch (err) { status.textContent = ''; toast(err.message || 'Upload failed', 'error'); }
+        finally { save.disabled = false; e.target.value = ''; }
+      });
+      clear.addEventListener('click', () => { showImage(''); status.textContent = ''; });
+      form.image.addEventListener('change', () => showImage(form.image.value.trim()));
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const v = Object.fromEntries(new FormData(form));

@@ -49,3 +49,24 @@ export function fieldErrors(root, err) {
 
 /** Re-run the current route (after a change). */
 export const reload = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+
+/** Resize (longest side ≤ max px) and compress an image file in the browser → { blob, type }. */
+export async function compressImage(file, max = 1000) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); // product photos: flatten transparency onto white
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.85));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.86)); // Safari fallback
+  return blob;
+}
+
+export async function blobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}

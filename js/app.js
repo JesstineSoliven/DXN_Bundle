@@ -3,7 +3,7 @@
 import { icon } from './icons.js';
 import { footer, toast, esc } from './components.js';
 import { getProduct, loadCatalog } from './data/products.js';
-import { getOrder, getAdminKey } from './store/orders.js';
+import { getOrder } from './store/orders.js';
 import * as bundle from './store/bundle.js';
 import { renderHome } from './views/home.js';
 import { renderProducts, mountProducts } from './views/products.js';
@@ -27,10 +27,9 @@ const renderAccount = () => `
 /** Orders live on the server; a 404 renders the view's "not found" state, other errors a retry card. */
 async function loadOrder(params) {
   try {
-    const admin = params.get('demo') === '1' ? getAdminKey() : '';
-    return await getOrder(params.get('id'), params.get('t'), { adminKey: admin, sync: params.get('paid') === '1' });
+    return await getOrder(params.get('id'), params.get('t'), { sync: params.get('paid') === '1' });
   } catch (err) {
-    if (err.status === 404 || err.status === 401) return null;
+    if (err.status === 404) return null;
     throw err;
   }
 }
@@ -47,7 +46,7 @@ const errorView = (message) => `
       ${icon('shield', 'w-12 h-12 mx-auto text-ink-mute', 1.4)}
       <h1 class="font-serif text-[22px] mt-4">Something went wrong</h1>
       <p class="text-[14px] text-ink-mute mt-2">${esc(message)}</p>
-      <button type="button" class="btn btn-green h-11 px-6 mt-6 text-[14px]" onclick="window.dispatchEvent(new HashChangeEvent('hashchange'))">Try again</button>
+      <button type="button" class="btn btn-green h-11 px-6 mt-6 text-[14px]" data-retry>Try again</button>
     </div>
   </section>`;
 
@@ -101,7 +100,10 @@ async function render() {
   if (route.load) {
     app.innerHTML = loadingView();
     try { data = await route.load(params); } catch (err) {
-      if (seq === renderSeq) app.innerHTML = errorView(err.message);
+      if (seq === renderSeq) {
+        app.innerHTML = errorView(err.message);
+        app.querySelector('[data-retry]')?.addEventListener('click', render);
+      }
       return;
     }
     if (seq !== renderSeq) return; // user navigated away while loading
@@ -112,6 +114,9 @@ async function render() {
   currentRoute = name;
   closeMenu();
 }
+
+// Home "more products" arrow (no inline handlers: the Content-Security-Policy blocks them).
+document.addEventListener('click', (e) => { if (e.target.closest('[data-more-products]')) location.hash = '#/products'; });
 
 // ---------- Bundle actions (any [data-action][data-id] button, on any page) ----------
 document.addEventListener('click', (e) => {

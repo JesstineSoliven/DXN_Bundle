@@ -1,5 +1,6 @@
 // Admin dashboard browser test. Usage: ADMIN_API_KEY=… node tests/admin-e2e.mjs [--mobile]   (dev server running)
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 const require = createRequire('C:/Users/Jess/Desktop/Claude/Optivion/package.json');
 const puppeteer = require('puppeteer');
 
@@ -32,13 +33,28 @@ const oid = order.order.id;
 
 console.log(`Admin UI (${mobile ? 'mobile' : 'desktop'}) → ${BASE}/admin`);
 await p.goto(`${BASE}/admin`, { waitUntil: 'networkidle0' });
-await p.evaluate(() => sessionStorage.clear()); await p.reload({ waitUntil: 'networkidle0' });
+await p.deleteCookie({ name: 'dxn_admin', url: BASE }).catch(() => {}); await p.reload({ waitUntil: 'networkidle0' });
 
-console.log('Sign in');
-ok(!!(await p.$('[data-login]')), 'login screen shown without a key');
-await type('#admin-key', 'wrong-key-wrong-key'); await click('[data-login] button');
-ok(await waitText('[data-login-error]', 'isn’t valid'), 'wrong key rejected');
-await type('#admin-key', KEY); await click('[data-login] button');
+console.log('Account: invite → set password → sign in');
+ok(!!(await p.$('[data-login]')), 'sign-in screen shown when signed out');
+const email = `ui-owner-${Date.now().toString(36)}@test.local`, pw = 'ui test password 2026';
+const LOG = process.env.MAIL_LOG || '.data/dev-server.log';
+const before = readFileSync(LOG, 'utf8').length;
+await fetch(`${BASE}/api/admin/users`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': KEY }, body: JSON.stringify({ email, name: 'UI Owner', role: 'owner' }) });
+let token = null;
+for (let i = 0; i < 30 && !token; i++) { const m = new RegExp(`${email}[^\\n]*?set-password\\?token=([A-Za-z0-9_-]+)|set-password\\?token=([A-Za-z0-9_-]+)[^\\n]*${email}`).exec(readFileSync(LOG, 'utf8').slice(before)); token = m && (m[1] || m[2]); if (!token) await sleep(200); }
+ok(Boolean(token), 'invite link emailed');
+await p.goto(`${BASE}/admin#/set-password?token=${token}`, { waitUntil: 'networkidle0' });
+ok(await waitText('#admin', 'Welcome, UI Owner'), 'set-password page greets the new owner');
+await type('#new-password', pw); await type('#new-password2', 'something else 123'); await click('[data-setpw] [type=submit]');
+ok(await waitText('[data-error]', 'don’t match'), 'mismatched passwords caught');
+await type('#new-password2', pw); await click('[data-setpw] [type=submit]');
+ok(await waitText('#adm-main', 'Paid revenue per day'), 'password saved → signed in to the dashboard');
+await click('[data-logout]');
+ok(await waitText('[data-login]', 'Sign in'), 'sign out');
+await type('#login-email', email); await type('#login-password', 'wrong password 999'); await click('[data-login] [type=submit]');
+ok(await waitText('[data-error]', 'incorrect'), 'wrong password rejected');
+await type('#login-email', email); await type('#login-password', pw); await click('[data-login] [type=submit]');
 ok(await waitText('#adm-main', 'Paid revenue per day'), 'signed in → dashboard');
 
 console.log('Dashboard');
@@ -88,6 +104,10 @@ await click('[data-add]');
 const code = `UI${Date.now().toString(36).toUpperCase().slice(-5)}`;
 await type('[data-product-form] [name=code]', code);
 await type('[data-product-form] [name=name]', 'UI Test Product');
+await (await p.$('[data-product-form] [data-file]')).uploadFile('assets/img/logo.webp');
+ok(await waitText('[data-upload-status]', 'Uploaded', 10000), 'photo compressed + uploaded');
+const imgUrl = await p.$eval('[data-product-form] [name=image]', (i) => i.value);
+ok(imgUrl.startsWith('assets/img/uploads/logo-') && /\.(webp|jpg)$/.test(imgUrl) && await p.$eval('[data-preview]', (i) => !i.hidden && i.naturalWidth > 0), `photo preview shown (${imgUrl})`);
 await type('[data-product-form] [name=price]', '0');
 await click('[data-save]');
 ok(await waitText('[data-form-error]', 'price'), 'dialog validates price');
@@ -139,9 +159,17 @@ if (mobile) {
   ok(await waitText('#adm-main', 'Products') && !(await p.$eval('[data-side]', (s) => s.classList.contains('is-open'))), 'menu closes after navigating');
 }
 
+console.log('Owner pages');
+await go('#/team');
+ok(await waitText('#adm-main', email) && (await txt('#adm-main')).includes('(you)'), 'Team lists you');
+await go('#/system');
+ok(await waitText('#adm-main', 'Configuration') && (await txt('#adm-main')).includes('Database'), 'System page');
+
 console.log('Sign out');
 await click('[data-logout]');
-ok(!!(await p.$('[data-login]')) && !(await p.evaluate(() => sessionStorage.getItem('dxn.adminKey'))), 'signed out, key cleared');
+ok(!!(await p.$('[data-login]')), 'signed out');
+await p.goto(`${BASE}/admin#/orders`, { waitUntil: 'networkidle0' });
+ok(!!(await p.$('[data-login]')), 'session really ended (sign-in required again)');
 
 console.log(`\n${pass} passed, ${fail} failed; console errors: ${errs.length ? errs.join(' | ') : 'none'}`);
 await b.close();

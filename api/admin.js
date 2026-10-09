@@ -5,11 +5,30 @@ import { requireAdmin } from '../lib/admin.js';
 import { getOrderInternal, setOrderStatus, setPaymentStatus } from '../lib/orders.js';
 import { listOrders, listCustomers, summary } from '../lib/admin/reports.js';
 import * as catalog from '../lib/admin/catalog.js';
-import { emailCustomerPaymentStatus, emailCustomerOrderStatus } from '../lib/emails.js';
+import { emailCustomerPaymentStatus, emailCustomerOrderStatus, emailAdminAccountLink } from '../lib/emails.js';
+import { publicUser, listAdminUsers, createAdminUser, updateAdminUser, issueToken } from '../lib/auth.js';
+import { systemStatus } from '../lib/admin/system.js';
+import { uploadProductImage } from '../lib/admin/uploads.js';
 
 const ORDER_ID = String.raw`(DXN-\d{6}-\d{4})`;
 const routes = [
-  ['GET', 'me', async () => ({ ok: true })],
+  ['GET', 'me', async (_m, _b, _q, _base, user) => ({ ok: true, user: publicUser(user) })],
+  ['GET', 'system', async () => systemStatus(), { owner: true }],
+  ['POST', 'upload', async (_m, b) => uploadProductImage(b)],
+  // Admin accounts (owner only)
+  ['GET', 'users', async () => ({ users: await listAdminUsers() }), { owner: true }],
+  ['POST', 'users', async (_m, b, _q, base) => {
+    const u = await createAdminUser(b);
+    await emailAdminAccountLink(u, await issueToken(u.id, 'invite'), 'invite', base);
+    return { user: publicUser(u) };
+  }, { owner: true }],
+  ['PATCH', String.raw`users/(\d+)`, async ([id], b, _q, _base, user) => ({ user: publicUser(await updateAdminUser(user, id, b)) }), { owner: true }],
+  ['POST', String.raw`users/(\d+)/invite`, async ([id], _b, _q, base) => {
+    const [u] = (await listAdminUsers()).filter((x) => x.id === Number(id));
+    if (!u) throw new HttpError(404, 'Admin user not found.');
+    await emailAdminAccountLink(u, await issueToken(u.id, u.invitePending ? 'invite' : 'reset'), u.invitePending ? 'invite' : 'reset', base);
+    return { sent: true };
+  }, { owner: true }],
   ['GET', 'summary', async (_m, _b, q) => summary({ days: q.get('days') })],
   ['GET', 'orders', async (_m, _b, q) => listOrders(Object.fromEntries(q))],
   ['GET', `orders/${ORDER_ID}`, async ([id]) => {
@@ -38,10 +57,10 @@ const routes = [
   ['GET', 'referrals', async () => ({ referrals: await catalog.listReferrals() })],
   ['POST', 'referrals', async (_m, b) => ({ referral: await catalog.createReferral(b) })],
   ['PATCH', 'referrals/([A-Za-z0-9-]{1,20})', async ([code], b) => ({ referral: await catalog.updateReferral(code, b) })],
-].map(([method, pattern, fn]) => ({ method, re: new RegExp(`^${pattern}$`), fn }));
+].map(([method, pattern, fn, opts = {}]) => ({ method, re: new RegExp(`^${pattern}$`), fn, owner: Boolean(opts.owner) }));
 
 export default handler(['GET', 'POST', 'PATCH', 'DELETE'], async (req, res) => {
-  requireAdmin(req);
+  const user = await requireAdmin(req);
   const { segments, query } = urlParts(req);
   // Rewritten request: ?path=orders/DXN-…/status ; direct request: /api/admin/orders/…
   const path = (query.get('path') ?? segments.slice(2).join('/')).replace(/^\/+|\/+$/g, '');
@@ -50,8 +69,9 @@ export default handler(['GET', 'POST', 'PATCH', 'DELETE'], async (req, res) => {
     if (r.method !== req.method) continue;
     const m = r.re.exec(path);
     if (!m) continue;
-    const body = ['POST', 'PATCH'].includes(req.method) ? await readJson(req) : {};
-    return send(res, ['POST'].includes(req.method) && !path.includes('/') ? 201 : 200, await r.fn(m.slice(1), body, query, siteUrl(req)));
+    const body = ['POST', 'PATCH'].includes(req.method) ? await readJson(req, path === 'upload' ? 4_000_000 : undefined) : {};
+    if (r.owner && user.role !== 'owner') throw new HttpError(403, 'Only the store owner can do that.');
+    return send(res, ['POST'].includes(req.method) && !path.includes('/') ? 201 : 200, await r.fn(m.slice(1), body, query, siteUrl(req), user));
   }
   throw new HttpError(404, 'Unknown admin endpoint.');
 });

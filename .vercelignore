@@ -12,3 +12,4 @@ scripts/
 sql/
 .data/
 dev-server.mjs
+assets/img/uploads/

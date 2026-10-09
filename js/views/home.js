@@ -112,7 +112,7 @@ const featured = () => {
 
     <div class="hidden lg:block relative">
       <div class="grid grid-cols-5 gap-4" data-featured-row>${list.slice(0, 5).map(productCardRow).join('')}</div>
-      <button type="button" class="icon-btn absolute -right-5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white shadow-[var(--shadow-2)]" aria-label="More products" onclick="location.hash='#/products'">${icon('chevronRight', 'w-5 h-5', 2)}</button>
+      <button type="button" class="icon-btn absolute -right-5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white shadow-[var(--shadow-2)]" aria-label="More products" data-more-products>${icon('chevronRight', 'w-5 h-5', 2)}</button>
     </div>
     <div class="grid lg:hidden grid-cols-2 gap-3">${list.map(productCardTile).join('')}</div>
   </section>`;

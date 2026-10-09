@@ -126,16 +126,15 @@ await Promise.all([p.waitForNavigation({ waitUntil: 'domcontentloaded' }), p.cli
 ok(await waitText('[data-pay-status]', 'Payment Confirmed', 12000), 'webhook delayed → page re-checks with PayMongo → Payment Confirmed');
 const id3 = (await hash()).split('/')[2].split('?')[0];
 
-console.log('Admin override (demo panel)');
-await go(`#/order/${id3}?demo=1`); await waitText('#app', 'Admin key');
-await setVal('[data-admin-key]', 'wrong-key-wrong-key'); await click('[data-demo-status="failed"]'); await sleep(800);
-ok(await visible('[data-demo-error]') && (await txt('[data-demo-error]')).includes('Invalid admin key'), 'wrong admin key refused');
+console.log('Admin override (via admin API) → customer sees it');
+ok(!(await p.$('[data-admin-key]')) && !(await txt('#app')).includes('Admin key'), 'no admin panel on customer pages (?demo=1 removed)');
 if (ADMIN) {
-  await setVal('[data-admin-key]', ADMIN); await click('[data-demo-status="failed"]');
-  ok(await waitText('[data-pay-status]', 'Payment Failed') && (await txt('#app')).includes('Try Again'), 'override → Payment Failed (+ Try Again for customer)');
-  await go(`#/order/${id3}?demo=1`); await waitText('#app', 'Admin key');
-  ok(await p.$eval('[data-admin-key]', (i) => i.value) === ADMIN, 'admin key remembered for the session');
-  await click('[data-demo-status="confirmed"]');
+  const override = (status, note) => fetch(new URL(`/api/admin/orders/${id3}/payment-status`, BASE), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN }, body: JSON.stringify({ status, note }) });
+  await override('failed', 'Refunded.');
+  await go(`#/order/${id3}`);
+  ok(await waitText('[data-pay-status]', 'Payment Failed') && (await txt('#app')).includes('Try Again'), 'refund override → customer sees Payment Failed + Try Again');
+  await override('confirmed', 'Resolved.');
+  await p.reload({ waitUntil: 'domcontentloaded' }); // same hash → reload to fetch the new status
   ok(await waitText('[data-pay-status]', 'Payment Confirmed'), 'override → Payment Confirmed');
   const o3 = await apiOrder(id3);
   ok(o3.payment.history.map((h) => h.status).join('>') === 'pending>confirmed>failed>confirmed', 'status history in the database');
@@ -158,13 +157,8 @@ ok(await waitText('#app', 'Order not found'), 'wrong token → not found');
 await p.evaluate(() => localStorage.removeItem('dxn.myOrders'));
 await go(`#/order/${id1}`);
 ok(await waitText('#app', 'Order not found'), 'no token on this device → not found');
-if (ADMIN) {
-  await p.evaluate(() => sessionStorage.clear());
-  await go(`#/order/${id1}?demo=1`);
-  ok(await waitText('#app', 'Enter your admin key'), 'admin link without key → unlock form');
-  await setVal('#unlock-key', ADMIN); await click('[data-admin-unlock] button[type=submit]');
-  ok(await waitText('#app', 'Thank you, Juan!'), 'admin key unlocks the order');
-}
+await go(`#/order/${id1}?demo=1`);
+ok(await waitText('#app', 'Order not found') && !(await txt('#app')).includes('admin key'), '?demo=1 no longer offers an admin unlock');
 
 console.log(`\n${pass} passed, ${fail} failed; console errors: ${errs.length ? errs.join(' | ') : 'none'}`);
 await b.close();

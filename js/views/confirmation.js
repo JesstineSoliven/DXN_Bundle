@@ -1,6 +1,6 @@
 // Order confirmation: #/order/DXN-YYMMDD-NNNN
 import { icon, formatPeso, esc } from '../components.js';
-import { setPaymentStatus, orderLink, getAdminKey, saveAdminKey, getOrder } from '../store/orders.js';
+import { orderLink, getOrder } from '../store/orders.js';
 
 const TONE = {
   cod_pending: 'bg-gold-soft text-gold-deep',
@@ -25,23 +25,6 @@ const timeline = (history) => `
     </ol>
   </div>`;
 
-// Stand-in for the Phase 6 admin dashboard: #/order/ID?demo=1. GCash payments confirm automatically via PayMongo;
-// these buttons are manual overrides (e.g. mark Failed after a refund/dispute).
-const demoPanel = (order) => `
-  <div class="mt-4 rounded-[14px] border-2 border-dashed border-[#C9CCC9] p-4 sm:p-5">
-    <p class="text-[12px] font-bold uppercase tracking-wider text-ink-mute">Admin · payment override (Phase 6 moves this to the dashboard)</p>
-    ${['pending', 'submitted', 'failed', 'confirmed'].includes(order.payment.status) ? `
-      <p class="text-[13.5px] mt-2">GCash payments are confirmed automatically by PayMongo. Use these only for exceptions (refunds, disputes).
-        Current status: <strong>${esc(order.payment.statusLabel)}</strong>${order.payment.paymentId ? ` · PayMongo ${esc(order.payment.paymentId)}` : ''}</p>
-      <label class="block text-[12.5px] font-semibold mt-3" for="demo-admin-key">Admin key</label>
-      <input id="demo-admin-key" type="password" autocomplete="off" class="field-input h-10 mt-1 max-w-[340px]" data-admin-key value="${esc(getAdminKey())}">
-      <p class="field-error" data-demo-error role="alert" hidden></p>
-      <div class="flex flex-wrap gap-2 mt-3">
-        ${order.payment.status !== 'confirmed' ? '<button type="button" class="btn btn-green h-10 px-4 text-[13.5px]" data-demo-status="confirmed">Mark Payment Confirmed</button>' : ''}
-        ${order.payment.status !== 'failed' ? '<button type="button" class="btn h-10 px-4 text-[13.5px] bg-[#B3261E] text-white hover:opacity-90" data-demo-status="failed">Mark Payment Failed</button>' : ''}
-      </div>` : `<p class="text-[13.5px] mt-2 text-ink-mute">Nothing to verify — payment status is “${esc(order.payment.statusLabel)}”.</p>`}
-  </div>`;
-
 const statusChip = (label, tone) => `<span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-bold ${tone}">${label}</span>`;
 
 export function renderConfirmation(params, order) {
@@ -52,14 +35,6 @@ export function renderConfirmation(params, order) {
         ${icon('receipt', 'w-12 h-12 mx-auto text-ink-mute', 1.4)}
         <h1 class="font-serif text-[22px] mt-4">Order not found</h1>
         <p class="text-[14px] text-ink-mute mt-2">We couldn’t find order <strong>${esc(params.get('id') || '')}</strong> on this device.</p>
-        ${params.get('demo') === '1' ? `
-        <form class="mt-6 text-left" data-admin-unlock>
-          <label for="unlock-key" class="block text-[13px] font-semibold mb-1.5">Admin? Enter your admin key to open this order</label>
-          <div class="flex gap-2">
-            <input id="unlock-key" type="password" autocomplete="off" class="field-input h-11 flex-1" required>
-            <button type="submit" class="btn btn-green h-11 px-5 text-[14px]">Open</button>
-          </div>
-        </form>` : ''}
         <a href="#/" class="btn btn-green h-11 px-6 mt-6 text-[14px]">Back to Home</a>
       </div>
     </section>`;
@@ -185,8 +160,6 @@ export function renderConfirmation(params, order) {
       </ol>
     </div>
 
-    ${params.get('demo') === '1' && !isCod ? demoPanel(order) : ''}
-
     <div class="flex flex-col sm:flex-row gap-3 justify-center mt-8">
       <a href="#/products" class="btn btn-green h-12 px-7 text-[15px]">Continue Shopping${icon('arrowRight', 'w-5 h-5 btn-arrow', 2)}</a>
       <a href="#/" class="btn h-12 px-7 text-[15px] text-brand border border-brand/30 bg-white hover:bg-brand-soft">Back to Home</a>
@@ -214,33 +187,12 @@ export function mountConfirmation(root, params) {
       }
     }, 2500);
   }
-  const unlock = root.querySelector('[data-admin-unlock]');
-  if (unlock) {
-    unlock.addEventListener('submit', (e) => {
-      e.preventDefault();
-      saveAdminKey(unlock.querySelector('input').value.trim());
-      window.dispatchEvent(new HashChangeEvent('hashchange')); // reload the order as admin
-    });
-  }
-  const onDemo = (e) => {
-    const b = e.target.closest('[data-demo-status]');
-    if (!b) return;
-    const status = b.dataset.demoStatus;
-    const key = root.querySelector('[data-admin-key]').value.trim();
-    const errEl = root.querySelector('[data-demo-error]');
-    saveAdminKey(key);
-    b.disabled = true;
-    setPaymentStatus(params.get('id'), status, status === 'failed' ? 'Marked failed by admin.' : 'Confirmed manually by admin.', key)
-      .then(() => window.dispatchEvent(new HashChangeEvent('hashchange'))) // reload with the new status
-      .catch((err) => { errEl.textContent = err.message; errEl.hidden = false; b.disabled = false; });
-  };
-  root.addEventListener('click', onDemo);
   const btn = root.querySelector('[data-copy]');
-  if (!btn) return () => { root.removeEventListener('click', onDemo); clearInterval(polling); };
+  if (!btn) return () => clearInterval(polling);
   const onClick = async () => {
     const id = root.querySelector('[data-order-id]').textContent.trim();
     try { await navigator.clipboard.writeText(id); btn.setAttribute('aria-label', 'Copied'); btn.classList.add('text-brand'); } catch { /* clipboard unavailable */ }
   };
   btn.addEventListener('click', onClick);
-  return () => { btn.removeEventListener('click', onClick); root.removeEventListener('click', onDemo); clearInterval(polling); };
+  return () => { btn.removeEventListener('click', onClick); clearInterval(polling); };
 }

@@ -37,6 +37,13 @@ function applyRewrites(url) {
   return url;
 }
 
+// vercel.json "headers" (source patterns use (.*) like Vercel), applied to every local response.
+const headerRules = (vercelConfig.headers || []).map(({ source, headers }) => ({ re: new RegExp(`^${source}$`), headers }));
+function applyHeaders(pathname, res) {
+  // Local is plain http: drop upgrade-insecure-requests (it would rewrite localhost requests to https).
+  for (const r of headerRules) if (r.re.test(pathname)) for (const { key, value } of r.headers) res.setHeader(key, value.replace(/;\s*upgrade-insecure-requests/, ''));
+}
+
 /** Resolve /api/... to a function file, preferring exact names over [param] names (like Vercel). */
 function resolveApi(segments) {
   let dir = path.join(ROOT, 'api');
@@ -94,6 +101,7 @@ async function mockCheckout(url, res) {
 
 const server = http.createServer(async (req, res) => {
   const url = applyRewrites(new URL(req.url, `http://localhost:${PORT}`));
+  applyHeaders(new URL(req.url, `http://localhost:${PORT}`).pathname, res);
   req.url = url.pathname + url.search; // handlers see the rewritten URL, like on Vercel
   if (url.pathname.startsWith('/dev/paymongo-') && process.env.PAYMONGO_MOCK === '1') return mockCheckout(url, res);
   if (url.pathname.startsWith('/api/')) {

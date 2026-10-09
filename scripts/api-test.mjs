@@ -125,9 +125,10 @@ if (ADMIN) {
   ok(back.data.order?.payment.status === 'confirmed', 'failed → confirmed');
   ok(back.data.order.payment.history.map((e) => e.status).join('>') === 'pending>confirmed>failed>confirmed', 'full status history');
   ok((await call('POST', `/api/admin/orders/${o1.id}/payment-status`, { status: 'failed' }, h)).status === 409, 'COD order cannot be marked failed → 409');
-  ok((await call('GET', `/api/orders/${o1.id}`, null, h)).data.order?.id === o1.id, 'admin key opens any order (no token)');
+  ok((await call('GET', `/api/admin/orders/${o1.id}`, null, h)).data.order?.id === o1.id, 'admin API opens any order');
+  ok((await call('GET', `/api/orders/${o1.id}`, null, h)).status === 404, 'store order endpoint ignores the admin key (token required)');
 } else console.log('  (set ADMIN_API_KEY to test admin overrides)');
-ok((await call('GET', `/api/orders/${o1.id}`, null, { 'x-admin-key': 'wrong-key-wrong-key' })).status === 401 || !ADMIN, 'wrong admin key on GET → 401');
+ok((await call('GET', `/api/admin/orders/${o1.id}`, null, { 'x-admin-key': 'wrong-key-wrong-key' })).status === 401 || !ADMIN, 'wrong admin key on GET → 401');
 
 console.log('Misc');
 ok((await call('GET', '/api/orders')).status === 405, 'GET /api/orders → 405');

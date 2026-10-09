@@ -4,6 +4,7 @@ import { handler, send, readRaw, siteUrl, HttpError } from '../../lib/http.js';
 import { verifySignature, parsePaidEvent } from '../../lib/paymongo.js';
 import { markGcashPaid } from '../../lib/orders.js';
 import { onGcashPaid } from '../../lib/payments.js';
+import { reportError } from '../../lib/alerts.js';
 
 export default handler(['POST'], async (req, res) => {
   const raw = await readRaw(req);
@@ -17,6 +18,7 @@ export default handler(['POST'], async (req, res) => {
   if (!paid) return send(res, 200, { received: true, ignored: event?.data?.attributes?.type || 'unknown' });
   if (!paid.paid || !/^DXN-\d{6}-\d{4}$/.test(paid.reference || '')) {
     console.warn('[webhook] paid event without a matching order reference', paid);
+    await reportError('webhook', 'GCash payment received for an unknown order', { reference: paid.reference, checkoutId: paid.checkoutId, amount: paid.amount });
     return send(res, 200, { received: true, ignored: 'no-order' });
   }
   try {
@@ -26,6 +28,7 @@ export default handler(['POST'], async (req, res) => {
   } catch (err) {
     // Amount mismatch / unknown order: acknowledge (so PayMongo stops retrying) but log loudly for the admin.
     console.error('[webhook] not applied:', paid.reference, err.message);
+    await reportError('webhook', `Payment not applied to ${paid.reference}: ${err.message}`, { order: paid.reference, paymentId: paid.paymentId, amount: paid.amount });
     send(res, 200, { received: true, applied: false, reason: err.message });
   }
 });

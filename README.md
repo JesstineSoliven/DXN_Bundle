@@ -68,7 +68,15 @@ Setup:
 
 ## Admin dashboard
 
-Open **`/admin`** (e.g. https://dxn-bundle.vercel.app/admin) and sign in with your `ADMIN_API_KEY`.
+Open **`/admin`** (e.g. https://dxn-bundle.vercel.app/admin) and sign in with **your email and password**.
+
+- **First owner account:** run `node scripts/admin-create.mjs you@example.com "Your Name" owner`. You get a "set your password" email; the link is valid for 3 days.
+- **Staff:** the owner invites them from **Team**. Everyone has their own login and can use **Forgot password**.
+- **Security:**
+  - After 8 wrong passwords, the account locks for 15 minutes.
+  - Sessions last 7 days and are stored in an HttpOnly, SameSite=Strict cookie.
+  - Switching a person off signs them out everywhere.
+- **Emergency key:** `ADMIN_API_KEY` still works for scripts. Remove it from Vercel once your account works; the System page reminds you.
 
 | Page | What you can do |
 |---|---|
@@ -78,19 +86,31 @@ Open **`/admin`** (e.g. https://dxn-bundle.vercel.app/admin) and sign in with yo
 | Categories | Add, rename, reorder, and delete empty categories |
 | Referral codes | Add codes, rename referrers, turn codes on or off, see orders and sales per code |
 | Customers | Search. Orders count, total paid, last order |
+| Team *(owner)* | Invite staff or owners, change roles, switch access off, resend links |
+| System *(owner)* | Database, email and PayMongo status (test/live), recent problems, recent emails |
 
 Customers are emailed when an order is **Shipped** (including your note, e.g. the courier and tracking number) or **Cancelled**. Price and product changes appear in the store within about a minute.
+
+## Production safeguards
+
+- **Rate limits** (stored in the database): checkout, referral checks, GCash start, login and password reset.
+- **Security headers** (`vercel.json`): a strict Content-Security-Policy (no inline scripts), HSTS, no framing, nosniff, Referrer-Policy and Permissions-Policy.
+- **Error alerts:** server errors, failed emails, PayMongo errors and payment mismatches go to `error_log`, and the admin is emailed at most once per hour per issue (Admin → System).
+- **Styles:** Tailwind is pre-built (`npm run build` → `css/tailwind.css`; Vercel runs it on deploy). There is no CDN script.
+- **Product photos:** uploaded from the product form, resized and compressed in the browser, and stored in Vercel Blob (`BLOB_READ_WRITE_TOKEN`).
 
 ## Tests
 
 ```bash
 # start the local server in mock mode (local database, no real email or PayMongo):
-DATABASE_URL= GMAIL_USER= GMAIL_APP_PASSWORD= PAYMONGO_MOCK=1 ADMIN_API_KEY=<key> npm run dev
+DATABASE_URL= GMAIL_USER= GMAIL_APP_PASSWORD= PAYMONGO_MOCK=1 PAYMONGO_WEBHOOK_SECRET=whsk_mock_dev_secret BLOB_MOCK=1 ALERTS=off RATE_LIMITS=off ADMIN_API_KEY=<key> npm run dev
+# (RATE_LIMITS=off is local-only; run scripts/auth-test.mjs with limits on)
 
 DATABASE_URL= ADMIN_API_KEY=<key> npm run test:api                # pricing, tokens, PayMongo webhook, admin
 DATABASE_URL= ADMIN_API_KEY=<key> node tests/e2e.mjs [--mobile]    # browser flows incl. GCash checkout
 DATABASE_URL= ADMIN_API_KEY=<key> node scripts/admin-test.mjs     # admin API
-ADMIN_API_KEY=<key> node tests/admin-e2e.mjs [--mobile]             # admin dashboard UI
+ADMIN_API_KEY=<key> node tests/admin-e2e.mjs [--mobile]             # admin dashboard UI (incl. sign-in + photo upload)
+DATABASE_URL= ADMIN_API_KEY=<key> node scripts/auth-test.mjs      # accounts, sessions, CSRF, lockout, rate limits
 ```
 
 ## Layout
