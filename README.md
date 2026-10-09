@@ -29,7 +29,7 @@ package) or ordering a Mystery Box, paid by Cash on Delivery or GCash.
    npm install
    npx vercel link
    npx vercel env pull .env.local     # downloads DATABASE_URL etc.
-   npm run db:setup                   # schema + 154 products + sample referral codes
+   npm run db:setup                   # schema + 154 products + sample referral codes (re-runnable; keeps admin edits)
    ```
 
 6. **Redeploy** in Vercel.

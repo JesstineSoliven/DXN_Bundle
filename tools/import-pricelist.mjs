@@ -139,5 +139,6 @@ if (skipped.length) console.log(`  skipped ${skipped.length}:\n   - ${skipped.jo
 
 if (args.includes('--db')) {
   console.log('→ updating the database…');
+  process.env.DB_SETUP_UPDATE_PRODUCTS = '1'; // overwrite names/prices with the new price list (images, featured, archive status kept)
   await import('../scripts/db-setup.mjs'); // reads the catalog.js just written
 }
