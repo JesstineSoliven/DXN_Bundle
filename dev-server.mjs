@@ -35,8 +35,44 @@ function resolveApi(segments) {
   return fs.existsSync(path.join(dir, 'index.js')) ? path.join(dir, 'index.js') : null;
 }
 
+// ---- PayMongo mock (PAYMONGO_MOCK=1): fake hosted checkout that pays/cancels and sends a signed webhook ----
+if (process.env.PAYMONGO_MOCK === '1') process.env.PAYMONGO_WEBHOOK_SECRET ||= 'whsk_mock_dev_secret';
+
+async function mockCheckout(url, res) {
+  const pm = await import(pathToFileURL(path.join(ROOT, 'lib', 'paymongo.js')).href);
+  const s = pm.mock.get(url.searchParams.get('cs'));
+  if (!s) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Unknown checkout session'); }
+  const action = url.pathname.split('/').pop();
+  if (action === 'paymongo-checkout') {
+    const peso = '₱' + (s.total / 100).toLocaleString('en-PH');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mock PayMongo — GCash</title>
+      <body style="font-family:system-ui;max-width:420px;margin:40px auto;padding:0 16px;text-align:center">
+      <p style="color:#888;font-size:12px">MOCK PAYMONGO CHECKOUT (local dev only)</p>
+      <h1 style="color:#0057e4">GCash</h1><p>${s.reference}</p><p id="amount" style="font-size:32px;font-weight:800">${peso}</p>
+      <p><a id="pay" href="/dev/paymongo-pay?cs=${s.id}" style="display:block;padding:14px;background:#0057e4;color:#fff;border-radius:10px;text-decoration:none">Authorize test payment</a></p>
+      <p><a id="pay-nowebhook" href="/dev/paymongo-pay?cs=${s.id}&nowebhook=1">Pay (simulate delayed webhook)</a></p>
+      <p><a id="cancel" href="/dev/paymongo-cancel?cs=${s.id}">Cancel</a></p></body>`);
+  }
+  if (action === 'paymongo-pay') {
+    pm.mock.pay(s.id);
+    if (url.searchParams.get('nowebhook') !== '1') {
+      const body = JSON.stringify({ data: { id: `evt_mock_${Date.now()}`, attributes: { type: 'checkout_session.payment.paid', livemode: false, data: {
+        id: s.id, attributes: { reference_number: s.reference, status: 'active', metadata: { order_id: s.reference },
+          payments: [{ id: s.paymentId, attributes: { amount: s.amount, status: 'paid' } }] } } } } });
+      await fetch(`http://localhost:${PORT}/api/webhooks/paymongo`, {
+        method: 'POST', body, headers: { 'Content-Type': 'application/json', 'Paymongo-Signature': pm.signPayload(body, process.env.PAYMONGO_WEBHOOK_SECRET) },
+      }).catch((err) => console.error('[mock webhook]', err.message));
+    }
+    res.writeHead(302, { Location: s.successUrl }); return res.end();
+  }
+  if (action === 'paymongo-cancel') { res.writeHead(302, { Location: s.cancelUrl }); return res.end(); }
+  res.writeHead(404); res.end();
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  if (url.pathname.startsWith('/dev/paymongo-') && process.env.PAYMONGO_MOCK === '1') return mockCheckout(url, res);
   if (url.pathname.startsWith('/api/')) {
     const file = resolveApi(url.pathname.split('/').filter(Boolean).slice(1));
     if (!file) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end('{"error":"Not found."}'); }

@@ -41,17 +41,3 @@ export function referralFormatError(code) {
   return '';
 }
 
-/** GCash payment proof. GCash reference numbers are 13 digits. */
-export function validateGcashProof({ reference = '', senderName = '', senderMobile = '' } = {}) {
-  const ref = s(reference).replace(/\D/g, '');
-  const mobile = s(senderMobile).replace(/[\s\-().]/g, '');
-  const errors = {};
-  if (ref.length !== 13) errors.reference = 'Enter the 13-digit reference number from your GCash receipt.';
-  if (s(senderName).trim().length < 2 || s(senderName).length > 120) errors.senderName = 'Enter the name on the GCash account you paid from.';
-  if (!/^(?:\+?63|0)9\d{9}$/.test(mobile)) errors.senderMobile = 'Enter the GCash mobile number you paid from.';
-  return {
-    ok: !Object.keys(errors).length,
-    errors,
-    proof: { reference: ref, senderName: s(senderName).trim(), senderMobile: mobile.replace(/^\+?63/, '0') },
-  };
-}

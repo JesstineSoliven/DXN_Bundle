@@ -45,7 +45,7 @@ ok(/^DXN-\d{6}-\d{4}$/.test(o1?.id) && typeof tampered.data.token === 'string' &
 ok(o1?.payment.status === 'cod_pending' && o1.customer.mobile === '+63 917 555 0101', 'COD pending, mobile normalised');
 
 const o2 = (await call('POST', '/api/orders', { type: 'mystery', mysteryQty: 2, paymentMethod: 'gcash', referralCode: 'DXNPH2026', customer })).data;
-ok(o2.order?.totals.grandTotal === 15998 && o2.order.payment.status === 'pending', 'Mystery Box ×2 = ₱15,998, GCash pending');
+ok(o2.order?.totals.subtotal === 15998 && o2.order.payment.status === 'pending', 'Mystery Box ×2 = ₱15,998 subtotal, GCash pending');
 const n1 = +o1.id.slice(-4), n2 = +o2.order.id.slice(-4);
 ok(n2 === n1 + 1, `order numbers sequential (${o1.id} → ${o2.order.id})`);
 
@@ -64,39 +64,69 @@ ok((await call('GET', `/api/orders/${o1.id}?t=${tampered.data.token}`)).data.ord
 ok((await call('GET', `/api/orders/${o1.id}`)).status === 404, 'GET without token → 404');
 ok((await call('GET', `/api/orders/${o1.id}?t=${o2.token}`)).status === 404, 'GET with another order’s token → 404');
 
-console.log('GCash payment');
+console.log('GCash via PayMongo (mock)');
+const WH_SECRET = process.env.PAYMONGO_WEBHOOK_SECRET || 'whsk_mock_dev_secret';
+const { signPayload } = await import('../lib/paymongo.js');
+const paidEvent = (cs, ref, amount, payId = 'pay_test_' + Date.now()) => JSON.stringify({ data: { id: 'evt_test', attributes: {
+  type: 'checkout_session.payment.paid', livemode: false,
+  data: { id: cs, attributes: { reference_number: ref, payments: [{ id: payId, attributes: { amount, status: 'paid' } }] } } } } });
+const webhook = (body, sig = signPayload(body, WH_SECRET)) => fetch(BASE + '/api/webhooks/paymongo', { method: 'POST', body, headers: { 'Content-Type': 'application/json', 'Paymongo-Signature': sig } });
+
 const id2 = o2.order.id, t2 = o2.token;
-const bad = await call('POST', `/api/orders/${id2}/payment`, { token: t2, reference: '123', senderName: 'A', senderMobile: '1' });
-ok(bad.status === 422 && bad.data.fields?.reference && bad.data.fields?.senderMobile, 'bad proof → field errors');
-ok((await call('POST', `/api/orders/${id2}/payment`, { token: 'wrong', reference: '1234567890123', senderName: 'API Test', senderMobile: '09175550101' })).status === 404, 'wrong token → 404');
-const refNo = ref13();
-const sub = await call('POST', `/api/orders/${id2}/payment`, { token: t2, reference: refNo, senderName: 'API Test', senderMobile: '0917 555 0101' });
-ok(sub.status === 200 && sub.data.order.payment.status === 'submitted' && sub.data.order.payment.proof.reference === refNo, 'proof accepted → submitted');
-ok((await call('POST', `/api/orders/${id2}/payment`, { token: t2, reference: refNo, senderName: 'API Test', senderMobile: '09175550101' })).status === 409, 'second submit → 409');
-ok((await call('POST', `/api/orders/${o1.id}/payment`, { token: tampered.data.token, reference: ref13(), senderName: 'API Test', senderMobile: '09175550101' })).status === 409, 'COD order cannot take GCash proof');
-
 const o3 = (await call('POST', '/api/orders', { type: 'custom', items: [{ id: 'fb205', qty: 1 }], paymentMethod: 'gcash', referralCode: 'DXN-JS002', customer })).data;
-const dupe = await call('POST', `/api/orders/${o3.order.id}/payment`, { token: o3.token, reference: refNo, senderName: 'API Test', senderMobile: '09175550101' });
-ok(dupe.status === 422 && /already used/.test(dupe.data.fields?.reference || ''), 'reference reused on another order → rejected');
+ok(o2.order.totals.paymentFee === Math.ceil(15998 * 250 / 10000) && o2.order.totals.grandTotal === 15998 + o2.order.totals.paymentFee,
+  `GCash fee added server-side (₱${o2.order.totals.paymentFee}) → ₱${o2.order.totals.grandTotal}`);
+ok(o1.totals.paymentFee === 0, 'COD has no payment fee');
+const pay1 = await call('POST', `/api/orders/${id2}/pay`, { token: t2 });
+ok(pay1.status === 200 && /\/dev\/paymongo-checkout\?cs=cs_mock_/.test(pay1.data.checkoutUrl || ''), 'checkout session created → redirect URL');
+const pay2 = await call('POST', `/api/orders/${id2}/pay`, { token: t2 });
+ok(pay2.data.checkoutUrl === pay1.data.checkoutUrl, 'active session reused (no duplicates)');
+ok((await call('POST', `/api/orders/${id2}/pay`, { token: 'wrong' })).status === 404, 'wrong token → 404');
+ok((await call('POST', `/api/orders/${o1.id}/pay`, { token: tampered.data.token })).status === 409, 'COD order cannot start GCash');
+const cs = new URL(pay1.data.checkoutUrl).searchParams.get('cs');
+const cents = o2.order.totals.grandTotal * 100;
 
-console.log('Admin payment status');
+ok((await webhook(paidEvent(cs, id2, cents), 't=1,te=deadbeef,li=')).status === 401, 'forged webhook signature → 401');
+const stale = paidEvent(cs, id2, cents);
+ok((await webhook(stale, signPayload(stale, WH_SECRET, Math.floor(Date.now() / 1000) - 3600))).status === 401, 'stale webhook timestamp → 401');
+const short = await (await webhook(paidEvent(cs, id2, cents - 100))).json();
+ok(short.applied === false && /does not match/.test(short.reason || ''), 'underpaid amount rejected');
+ok((await call('GET', `/api/orders/${id2}?t=${t2}`)).data.order.payment.status === 'pending', '…order stays Pending');
+const other = await (await webhook(paidEvent(cs, o3.order.id, cents))).json();
+ok(other.applied === false, 'session paid for another order rejected');
+const payOk = 'pay_test_ok_' + Date.now();
+const good = await (await webhook(paidEvent(cs, id2, cents, payOk))).json();
+ok(good.changed === true, 'valid webhook → order paid');
+const paidOrder = (await call('GET', `/api/orders/${id2}?t=${t2}`)).data.order;
+ok(paidOrder.payment.status === 'confirmed' && paidOrder.payment.paymentId === payOk && paidOrder.payment.paidAt, 'status Payment Confirmed + PayMongo payment id + paid time');
+ok((await (await webhook(paidEvent(cs, id2, cents, payOk))).json()).changed === false, 'webhook replay is idempotent');
+ok((await call('POST', `/api/orders/${id2}/pay`, { token: t2 })).status === 409, 'paid order cannot start a new checkout');
+const ign = await (await webhook(JSON.stringify({ data: { attributes: { type: 'payment.refunded' } } }))).json();
+ok(ign.ignored === 'payment.refunded', 'other event types acknowledged and ignored');
+
+console.log('Sync on return (webhook delayed)');
+const p3 = await call('POST', `/api/orders/${o3.order.id}/pay`, { token: o3.token });
+const cs3 = new URL(p3.data.checkoutUrl).searchParams.get('cs');
+await fetch(`${BASE}/dev/paymongo-pay?cs=${cs3}&nowebhook=1`, { redirect: 'manual' });
+ok((await call('GET', `/api/orders/${o3.order.id}?t=${o3.token}`)).data.order.payment.status === 'pending', 'paid at PayMongo, no webhook yet → still pending');
+ok((await call('GET', `/api/orders/${o3.order.id}?t=${o3.token}&sync=1`)).data.order.payment.status === 'confirmed', 'sync=1 asks PayMongo → confirmed');
+
+console.log('Admin overrides');
 const path2 = `/api/admin/orders/${id2}/payment-status`;
-ok((await call('POST', path2, { status: 'confirmed' })).status === 401 || !ADMIN, 'no admin key → 401');
-ok((await call('POST', path2, { status: 'confirmed' }, { 'x-admin-key': 'wrong-key-wrong-key' })).status === 401 || !ADMIN, 'wrong admin key → 401');
+ok((await call('POST', path2, { status: 'failed' })).status === 401 || !ADMIN, 'no admin key → 401');
+ok((await call('POST', path2, { status: 'failed' }, { 'x-admin-key': 'wrong-key-wrong-key' })).status === 401 || !ADMIN, 'wrong admin key → 401');
 if (ADMIN) {
   const h = { 'x-admin-key': ADMIN };
   ok((await call('POST', path2, { status: 'shipped' }, h)).status === 400, 'invalid status → 400');
-  const failed = await call('POST', path2, { status: 'failed', note: 'Not found in GCash.' }, h);
-  ok(failed.data.order?.payment.status === 'failed' && failed.data.order.payment.note === 'Not found in GCash.', 'mark failed (with note)');
-  const resub = await call('POST', `/api/orders/${id2}/payment`, { token: t2, reference: ref13().replace(/.$/, '9'), senderName: 'API Test', senderMobile: '09175550101' });
-  ok(resub.data.order?.payment.status === 'submitted', 'customer resubmits after failure');
-  const conf = await call('POST', path2, { status: 'confirmed', note: 'Verified.' }, h);
-  ok(conf.data.order?.payment.status === 'confirmed', 'mark confirmed');
-  ok(conf.data.order.payment.history.map((e) => e.status).join('>') === 'pending>submitted>failed>submitted>confirmed', 'full status history');
-  ok((await call('POST', path2, { status: 'failed' }, h)).status === 409, 'confirmed cannot change again → 409');
-  ok((await call('POST', `/api/admin/orders/${o1.id}/payment-status`, { status: 'confirmed' }, h)).status === 409, 'COD order not confirmable here → 409');
+  const failed = await call('POST', path2, { status: 'failed', note: 'Refunded to customer.' }, h);
+  ok(failed.data.order?.payment.status === 'failed' && failed.data.order.payment.note === 'Refunded to customer.', 'confirmed → failed (refund) with note');
+  ok((await call('POST', path2, { status: 'failed' }, h)).status === 409, 'failed → failed refused');
+  const back = await call('POST', path2, { status: 'confirmed', note: 'Resolved.' }, h);
+  ok(back.data.order?.payment.status === 'confirmed', 'failed → confirmed');
+  ok(back.data.order.payment.history.map((e) => e.status).join('>') === 'pending>confirmed>failed>confirmed', 'full status history');
+  ok((await call('POST', `/api/admin/orders/${o1.id}/payment-status`, { status: 'confirmed' }, h)).status === 409, 'COD order not changeable here → 409');
   ok((await call('GET', `/api/orders/${o1.id}`, null, h)).data.order?.id === o1.id, 'admin key opens any order (no token)');
-} else console.log('  (set ADMIN_API_KEY to test admin transitions)');
+} else console.log('  (set ADMIN_API_KEY to test admin overrides)');
 ok((await call('GET', `/api/orders/${o1.id}`, null, { 'x-admin-key': 'wrong-key-wrong-key' })).status === 401 || !ADMIN, 'wrong admin key on GET → 401');
 
 console.log('Misc');

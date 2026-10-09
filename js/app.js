@@ -28,7 +28,7 @@ const renderAccount = () => `
 async function loadOrder(params) {
   try {
     const admin = params.get('demo') === '1' ? getAdminKey() : '';
-    return await getOrder(params.get('id'), params.get('t'), { adminKey: admin });
+    return await getOrder(params.get('id'), params.get('t'), { adminKey: admin, sync: params.get('paid') === '1' });
   } catch (err) {
     if (err.status === 404 || err.status === 401) return null;
     throw err;

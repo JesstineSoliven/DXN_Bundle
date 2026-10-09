@@ -1,7 +1,7 @@
 // Checkout (step 3): customer details, delivery address, required referral code, payment method,
 // order summary. Works for the custom bundle (#/checkout) and Mystery Box (#/checkout?type=mystery).
 import { icon, formatPeso, esc, steps, productImage } from '../components.js';
-import { getDeliveryFee } from '../config.js';
+import { getDeliveryFee, getPaymentFee } from '../config.js';
 import { paymentMethods, defaultPaymentMethod, getPaymentMethod } from '../payments/index.js';
 import { validateReferralCode, normalizeCode } from '../services/referral.js';
 import { createOrder } from '../store/orders.js';
@@ -15,10 +15,12 @@ const DRAFT_KEY = 'dxn.checkout.draft';
 function orderLines(isMystery) {
   return isMystery ? mystery.lines() : bundle.lines();
 }
-function totals(lines) {
+/** Display totals. The server recomputes all of these when the order is placed. */
+function totals(lines, method = 'cod') {
   const subtotal = lines.reduce((a, l) => a + l.lineTotal, 0);
   const deliveryFee = getDeliveryFee(subtotal);
-  return { count: lines.reduce((a, l) => a + l.qty, 0), subtotal, deliveryFee, grandTotal: subtotal + deliveryFee };
+  const paymentFee = getPaymentFee(method, subtotal);
+  return { count: lines.reduce((a, l) => a + l.qty, 0), subtotal, deliveryFee, paymentFee, grandTotal: subtotal + deliveryFee + paymentFee };
 }
 
 // Validation rules are shared with the API: js/shared/rules.js (CHECKOUT_RULES).
@@ -79,10 +81,11 @@ const summary = (lines, t) => `
     <dl class="mt-5 pt-4 border-t border-line space-y-2.5 text-[14px]">
       <div class="flex justify-between"><dt class="text-ink-soft">Subtotal (${t.count} item${t.count === 1 ? '' : 's'})</dt><dd class="font-semibold">${formatPeso(t.subtotal)}</dd></div>
       <div class="flex justify-between"><dt class="text-ink-soft">Delivery fee</dt><dd>${t.deliveryFee ? formatPeso(t.deliveryFee) : '<span class="font-bold text-brand">FREE</span>'}</dd></div>
+      <div class="flex justify-between" data-fee-row ${t.paymentFee ? '' : 'hidden'}><dt class="text-ink-soft">GCash convenience fee</dt><dd data-fee>${formatPeso(t.paymentFee)}</dd></div>
     </dl>
     <div class="border-t border-line mt-4 pt-4 flex items-end justify-between">
       <span class="font-semibold">Grand Total</span>
-      <span class="font-price font-black text-[28px] leading-none text-brand">${formatPeso(t.grandTotal)}</span>
+      <span class="font-price font-black text-[28px] leading-none text-brand" data-grand>${formatPeso(t.grandTotal)}</span>
     </div>
     <p class="field-error mt-4" data-form-error role="alert" hidden></p>
     <button type="submit" form="checkout-form" class="btn btn-green w-full h-[54px] mt-4 text-[16px]" data-place-order>
@@ -175,11 +178,16 @@ export function mountCheckout(root, params) {
   let referral = null; // verified result for the current input
   let submitting = false;
 
-  const t = totals(orderLines(isMystery));
+  // Totals depend on the payment method (GCash adds a convenience fee).
   const updatePayNote = () => {
     const id = form.payment.value;
+    const t = totals(orderLines(isMystery), id);
+    const feeRow = root.querySelector('[data-fee-row]');
+    feeRow.hidden = !t.paymentFee;
+    root.querySelector('[data-fee]').textContent = formatPeso(t.paymentFee);
+    root.querySelector('[data-grand]').textContent = formatPeso(t.grandTotal);
     payNote.textContent = id === 'cod' ? `You’ll pay ${formatPeso(t.grandTotal)} in cash when your order arrives.`
-      : id === 'gcash' ? 'Next, you’ll scan our GCash QR and enter your reference no.' : '';
+      : id === 'gcash' ? `You’ll be taken to GCash to pay exactly ${formatPeso(t.grandTotal)}.` : '';
   };
   updatePayNote();
 
@@ -286,7 +294,8 @@ export function mountCheckout(root, params) {
       });
       if (isMystery) mystery.setQty(0); else bundle.clear();
       try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
-      const page = getPaymentMethod(order.payment.method).requiresProof ? 'pay' : 'order';
+      // GCash: the payment page immediately redirects to PayMongo → GCash.
+      const page = getPaymentMethod(order.payment.method).redirects ? 'pay' : 'order';
       location.hash = `#/${page}/${order.id}?t=${encodeURIComponent(token)}`;
     } catch (err) {
       submitting = false;

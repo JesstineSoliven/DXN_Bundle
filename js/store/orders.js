@@ -20,11 +20,11 @@ export async function createOrder(payload) {
   return { order, token };
 }
 
-export async function getOrder(id, urlToken, { adminKey } = {}) {
+export async function getOrder(id, urlToken, { adminKey, sync = false } = {}) {
   const token = tokenFor(id, urlToken);
   if (urlToken) rememberToken(id, urlToken);
   const headers = adminKey && !token ? { 'x-admin-key': adminKey } : undefined;
-  const { order } = await api.get(`/api/orders/${encodeURIComponent(id)}?t=${encodeURIComponent(token)}`, headers);
+  const { order } = await api.get(`/api/orders/${encodeURIComponent(id)}?t=${encodeURIComponent(token)}${sync ? '&sync=1' : ''}`, headers);
   return order;
 }
 
@@ -32,15 +32,10 @@ const ADMIN_KEY = 'dxn.adminKey'; // sessionStorage — cleared when the browser
 export const getAdminKey = () => { try { return sessionStorage.getItem(ADMIN_KEY) || ''; } catch { return ''; } };
 export const saveAdminKey = (k) => { try { sessionStorage.setItem(ADMIN_KEY, k); } catch { /* ignore */ } };
 
-/** → { ok: true, order } | { ok: false, errors } */
-export async function submitPaymentProof(id, proof) {
-  try {
-    const { order } = await api.post(`/api/orders/${encodeURIComponent(id)}/payment`, { token: tokenFor(id), ...proof });
-    return { ok: true, order };
-  } catch (err) {
-    if (err.fields) return { ok: false, errors: err.fields };
-    throw err;
-  }
+/** Start (or resume) the GCash checkout → PayMongo URL to redirect to. */
+export async function startGcashPayment(id) {
+  const { checkoutUrl } = await api.post(`/api/orders/${encodeURIComponent(id)}/pay`, { token: tokenFor(id) });
+  return checkoutUrl;
 }
 
 /** Admin only (x-admin-key). Phase 6 moves this into the dashboard. */

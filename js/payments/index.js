@@ -1,8 +1,7 @@
 // Payment method registry (browser side). Views only talk to this module, never to a specific provider.
-// The server (lib/orders.js) owns payment state; it validates with the same shared rules.
+// The server (lib/orders.js + lib/paymongo.js) owns payment state.
 // To add a method: append an entry here and allow its id in js/shared/constants.js PAYMENT_METHODS.
-import { GCASH_ACCOUNT, PAYMENT_METHODS, PAYMENT_STATUS } from '../shared/constants.js';
-import { validateGcashProof } from '../shared/rules.js';
+import { PAYMENT_METHODS, PAYMENT_STATUS } from '../shared/constants.js';
 
 export { PAYMENT_STATUS };
 
@@ -13,17 +12,16 @@ const methods = [
     description: 'Pay in cash when your order arrives.',
     icon: 'truck',
     available: true,
-    requiresProof: false,
+    redirects: false,
   },
   {
     id: 'gcash',
     label: PAYMENT_METHODS.gcash,
-    description: 'Scan our GCash QR or send to our number, then enter your reference no.',
+    description: 'Pay securely in the GCash app — the exact amount is filled in for you.',
     icon: 'wallet',
     available: true,
-    requiresProof: true,
-    account: GCASH_ACCOUNT,
-    validateProof: validateGcashProof,
+    redirects: true,       // customer is sent to PayMongo → GCash, confirmed automatically
+    feeLabel: 'GCash convenience fee',
   },
 ];
 

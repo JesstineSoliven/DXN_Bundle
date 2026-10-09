@@ -106,3 +106,9 @@ CREATE TABLE IF NOT EXISTS email_log (
   error       text,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
+
+-- PayMongo GCash (replaces the manual QR + reference-number flow; old gcash_* columns kept for history)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_fee integer NOT NULL DEFAULT 0;   -- GCash convenience fee, ₱
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paymongo_checkout_id text UNIQUE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paymongo_payment_id text UNIQUE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;

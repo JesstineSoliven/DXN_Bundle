@@ -23,12 +23,16 @@ export const PAYMENT_STATUS = {
   failed: 'Payment Failed',
 };
 
+/**
+ * GCash convenience fee charged to the customer (covers the PayMongo e-wallet fee).
+ * CONFIRM against PayMongo's current pricing (Dashboard → Settings → Fees) before going live.
+ */
+export const GCASH_FEE_BPS = 250; // basis points: 250 = 2.5%
+
+/** Payment fee for a method, in whole pesos (rounded up). COD has no fee. */
+// Integer math (basis points) avoids float rounding: ₱400 × 2.5% = exactly ₱10, not ₱11.
+export const getPaymentFee = (method, subtotal) => (method === 'gcash' ? Math.ceil((subtotal * GCASH_FEE_BPS) / 10000) : 0);
+
 /** Delivery fee for an order. A function so region/amount rules can be added later. */
 export const getDeliveryFee = (/* subtotal, address */) => DELIVERY_FEE;
 
-/** Store GCash account shown on the payment page and in admin emails. */
-export const GCASH_ACCOUNT = {
-  accountName: 'Jesstine Soliven',
-  number: '09267503411',
-  qrImage: 'assets/img/gcash-qr.webp',
-};
