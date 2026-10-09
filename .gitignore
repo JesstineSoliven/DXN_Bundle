@@ -14,4 +14,11 @@ Thumbs.db
 .env.*
 .data/
 .vercel/
+
+.vercel
+.env*
 !.env.example
+
+# Local AI tooling (installed by the Vercel/Neon CLI)
+.agents/
+skills-lock.json
